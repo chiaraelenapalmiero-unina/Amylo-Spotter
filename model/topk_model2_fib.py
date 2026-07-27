@@ -1,0 +1,859 @@
+"""
+Modello MLM v2 con tecniche anti-overfitting avanzate:
+- Label Smoothing
+- Embedding Dropout
+- Mixup (opzionale)
+- Warmup + Cosine Annealing
+- Metriche Joint (AA+Cluster) come topk_model.py
+python topk_model2.py   --data ./windows_all_local.npz   --test_data ./windows_exposed_testset_local.npz   --rotamer_csv rotamer_localmax_maxdens.csv   --outdir runs/mlm_bilstm_final   --epochs 150   --batch_size 32   --val_size 146   --lr 1e-3   --weight_decay 1e-3   --grad_clip 1.0   --d_embed 128   --d_hidden 256   --lstm_layers 2   --dropout 0.3   --lambda_cl 1.0   --patience (20 per buried 15 per exposed)   --embed_dropout 0.4   --label_smoothing 0.1   --use_mixup   --mixup_alpha 0.2
+
+Aggiunge metriche separate per ogni tipo di SS (Helix, Sheet, Coil, ecc.)
+"""
+"""
+Modello MLM v2 con tecniche anti-overfitting avanzate:
+- Label Smoothing
+- Embedding Dropout
+- Mixup (opzionale)
+- Warmup + Cosine Annealing
+- Metriche Joint (AA+Cluster) come topk_model.py
+python topk_model2.py   --data ./windows_all_local.npz   --test_data ./windows_exposed_testset_local.npz   --rotamer_csv rotamer_localmax_maxdens.csv   --outdir runs/mlm_bilstm_final   --epochs 150   --batch_size 32   --val_size 146   --lr 1e-3   --weight_decay 1e-3   --grad_clip 1.0   --d_embed 128   --d_hidden 256   --lstm_layers 2   --dropout 0.3   --lambda_cl 1.0   --patience (20 per buried 15 per exposed)   --embed_dropout 0.4   --label_smoothing 0.1   --use_mixup   --mixup_alpha 0.2
+
+Aggiunge metriche separate per ogni tipo di SS (Helix, Sheet, Coil, ecc.)
+"""
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+from pathlib import Path
+import json
+import math
+import time
+from collections import defaultdict
+
+
+# ============================================================
+# MODELLO v2: BiLSTM + Anti-Overfitting (identico)
+# ============================================================
+class ProteinMLM_v2(nn.Module):
+    def __init__(self, n_aa, aa_to_n_clusters, n_pos=3, n_ss=8,
+                 d_embed=64, d_hidden=64, n_lstm_layers=1, dropout=0.5,
+                 embed_dropout=0.3, use_blosum=True):
+        super().__init__()
+        self.n_aa = n_aa
+        self.aa_to_n_clusters = aa_to_n_clusters
+        self.max_clusters = max(aa_to_n_clusters.values())
+        self.use_blosum = use_blosum
+        
+        if use_blosum:
+            self.register_buffer('blosum62', self._init_blosum62())
+            blosum_dim = 20
+        else:
+            blosum_dim = 0
+        
+        self.emb_aa = nn.Embedding(n_aa + 1, d_embed)
+        self.emb_cl = nn.Embedding(self.max_clusters + 1, d_embed)
+        self.sasa_projection = nn.Linear(1, d_embed)
+        self.emb_ss = nn.Embedding(n_ss, d_embed)
+        self.emb_pos = nn.Embedding(n_pos, d_embed)
+        
+        self.embed_dropout = nn.Dropout(embed_dropout)
+        
+        lstm_input_size = d_embed * 5 + blosum_dim
+        
+        self.lstm = nn.LSTM(
+            input_size=lstm_input_size,
+            hidden_size=d_hidden,
+            num_layers=n_lstm_layers,
+            batch_first=True,
+            bidirectional=True,
+            dropout=dropout if n_lstm_layers > 1 else 0.0
+        )
+        
+        self.layer_norm = nn.LayerNorm(d_hidden * 2)
+        
+        self.attention = nn.Sequential(
+            nn.Linear(d_hidden * 2, d_hidden),
+            nn.Tanh(),
+            nn.Linear(d_hidden, 1)
+        )
+        
+        d_out = d_hidden * 2
+        self.dropout = nn.Dropout(dropout)
+        
+        self.head_aa = nn.Sequential(
+            nn.Linear(d_out, d_out),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_out, n_aa)
+        )
+        
+        # heads_cl con bottleneck ridotto (d_out//4) per limitare overfitting sui cluster
+        cl_hidden = max(64, d_out // 4)  # es. 512*2//4 = 256
+        self.heads_cl = nn.ModuleDict()
+        for aa_idx, n_cl in aa_to_n_clusters.items():
+            self.heads_cl[str(aa_idx)] = nn.Sequential(
+                nn.Linear(d_out, cl_hidden),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(cl_hidden, n_cl)
+            )
+        
+        self._init_weights()
+        
+        n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        print(f"[PROTEIN MLM v2 - SASA + SS] Parameters: {n_params:,}")
+        print(f"  Embed dropout: {embed_dropout}, Main dropout: {dropout}")
+        print(f"  Using SASA + Secondary Structure (n_ss={n_ss})")
+    
+    def _init_blosum62(self):
+        blosum_standard_order = "ARNDCQEGHILKMFPSTWYV"
+        blosum62_standard = np.array([
+            [ 4, -1, -2, -2,  0, -1, -1,  0, -2, -1, -1, -1, -1, -2, -1,  1,  0, -3, -2,  0],
+            [-1,  5,  0, -2, -3,  1,  0, -2,  0, -3, -2,  2, -1, -3, -2, -1, -1, -3, -2, -3],
+            [-2,  0,  6,  1, -3,  0,  0,  0,  1, -3, -3,  0, -2, -3, -2,  1,  0, -4, -2, -3],
+            [-2, -2,  1,  6, -3,  0,  2, -1, -1, -3, -4, -1, -3, -3, -1,  0, -1, -4, -3, -3],
+            [ 0, -3, -3, -3,  9, -3, -4, -3, -3, -1, -1, -3, -1, -2, -3, -1, -1, -2, -2, -1],
+            [-1,  1,  0,  0, -3,  5,  2, -2,  0, -3, -2,  1,  0, -3, -1,  0, -1, -2, -1, -2],
+            [-1,  0,  0,  2, -4,  2,  5, -2,  0, -3, -3,  1, -2, -3, -1,  0, -1, -3, -2, -2],
+            [ 0, -2,  0, -1, -3, -2, -2,  6, -2, -4, -4, -2, -3, -3, -2,  0, -2, -2, -3, -3],
+            [-2,  0,  1, -1, -3,  0,  0, -2,  8, -3, -3, -1, -2, -1, -2, -1, -2, -2,  2, -3],
+            [-1, -3, -3, -3, -1, -3, -3, -4, -3,  4,  2, -3,  1,  0, -3, -2, -1, -3, -1,  3],
+            [-1, -2, -3, -4, -1, -2, -3, -4, -3,  2,  4, -2,  2,  0, -3, -2, -1, -2, -1,  1],
+            [-1,  2,  0, -1, -3,  1,  1, -2, -1, -3, -2,  5, -1, -3, -1,  0, -1, -3, -2, -2],
+            [-1, -1, -2, -3, -1,  0, -2, -3, -2,  1,  2, -1,  5,  0, -2, -1, -1, -1, -1,  1],
+            [-2, -3, -3, -3, -2, -3, -3, -3, -1,  0,  0, -3,  0,  6, -4, -2, -2,  1,  3, -1],
+            [-1, -2, -2, -1, -3, -1, -1, -2, -2, -3, -3, -1, -2, -4,  7, -1, -1, -4, -3, -2],
+            [ 1, -1,  1,  0, -1,  0,  0,  0, -1, -2, -2,  0, -1, -2, -1,  4,  1, -3, -2, -2],
+            [ 0, -1,  0, -1, -1, -1, -1, -2, -2, -1, -1, -1, -1, -2, -1,  1,  5, -2, -2,  0],
+            [-3, -3, -4, -4, -2, -2, -3, -2, -2, -3, -2, -3, -1,  1, -4, -3, -2, 11,  2, -3],
+            [-2, -2, -2, -3, -2, -1, -2, -3,  2, -1, -1, -2, -1,  3, -3, -2, -2,  2,  7, -1],
+            [ 0, -3, -3, -3, -1, -2, -2, -3, -3,  3,  1, -2,  1, -1, -2, -2,  0, -3, -1,  4],
+        ], dtype=np.float32)
+        
+        new_order = "ACDEFGHIKLMNPQRSTVWY"
+        idx_standard = {aa: i for i, aa in enumerate(blosum_standard_order)}
+        
+        blosum_reordered = np.zeros_like(blosum62_standard)
+        for i, aa_i in enumerate(new_order):
+            for j, aa_j in enumerate(new_order):
+                blosum_reordered[i, j] = blosum62_standard[idx_standard[aa_i], idx_standard[aa_j]]
+        
+        return torch.tensor(blosum_reordered, dtype=torch.float32)
+    
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight, gain=0.8)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Embedding):
+                nn.init.normal_(m.weight, mean=0.0, std=0.01)
+            elif isinstance(m, nn.LSTM):
+                for name, param in m.named_parameters():
+                    if 'weight' in name:
+                        nn.init.orthogonal_(param, gain=0.8)
+                    elif 'bias' in name:
+                        nn.init.constant_(param, 0)
+    
+    def forward(self, batch, mixup_lambda=None, mixup_indices=None):
+        aa = batch['aa'].long()
+        cl = batch['cl'].long()
+        sasa = batch['sasa'].float()
+        ss = batch['ss'].long()
+        pos = batch['pos'].long()
+        
+        aa_emb = self.embed_dropout(self.emb_aa(aa))
+        cl_emb = self.embed_dropout(self.emb_cl(cl))
+        sasa_emb = self.sasa_projection(sasa.unsqueeze(-1))
+        sasa_emb = self.embed_dropout(sasa_emb)
+        ss_emb = self.embed_dropout(self.emb_ss(ss))
+        pos_emb = self.emb_pos(pos)
+        
+        if self.use_blosum:
+            aa_clamped = torch.clamp(aa, 0, 19)
+            blosum_feat = self.blosum62[aa_clamped]
+            x = torch.cat([aa_emb, blosum_feat, cl_emb, sasa_emb, ss_emb, pos_emb], dim=-1)
+        else:
+            x = torch.cat([aa_emb, cl_emb, sasa_emb, ss_emb, pos_emb], dim=-1)
+        
+        if mixup_lambda is not None and mixup_indices is not None:
+            x = mixup_lambda * x + (1 - mixup_lambda) * x[mixup_indices]
+        
+        lstm_out, _ = self.lstm(x)
+        lstm_out = self.layer_norm(lstm_out)
+        
+        attn_scores = self.attention(lstm_out)
+        attn_weights = F.softmax(attn_scores, dim=1)
+        
+        h = (lstm_out * attn_weights).sum(dim=1)
+        
+        L = aa.size(1)
+        center = L // 2
+        h_center = lstm_out[:, center, :]
+        
+        h = (h + h_center) / 2.0
+        h = self.dropout(h)
+        
+        logits_aa = self.head_aa(h)
+        
+        B = h.size(0)
+        device = h.device
+        
+        logits_cl_all = torch.full(
+            (B, self.n_aa, self.max_clusters),
+            float('-inf'), device=device
+        )
+        
+        for aa_idx in range(self.n_aa):
+            if str(aa_idx) in self.heads_cl:
+                logits_cl = self.heads_cl[str(aa_idx)](h)
+                n_cl = logits_cl.size(1)
+                logits_cl_all[:, aa_idx, :n_cl] = logits_cl
+        
+        valid_mask = torch.zeros(self.n_aa, self.max_clusters, dtype=torch.bool, device=device)
+        for aa_idx, n_cl in self.aa_to_n_clusters.items():
+            valid_mask[aa_idx, :n_cl] = True
+        
+        return logits_aa, logits_cl_all, valid_mask
+
+
+# ============================================================
+# COSINE ANNEALING WITH WARMUP (identico)
+# ============================================================
+class WarmupCosineScheduler:
+    def __init__(self, optimizer, warmup_epochs, total_epochs, min_lr=1e-6):
+        self.optimizer = optimizer
+        self.warmup_epochs = warmup_epochs
+        self.total_epochs = total_epochs
+        self.min_lr = min_lr
+        self.base_lrs = [pg['lr'] for pg in optimizer.param_groups]
+    
+    def step(self, epoch):
+        if epoch < self.warmup_epochs:
+            factor = (epoch + 1) / self.warmup_epochs
+        else:
+            progress = (epoch - self.warmup_epochs) / (self.total_epochs - self.warmup_epochs)
+            factor = 0.5 * (1 + math.cos(math.pi * progress))
+        
+        for pg, base_lr in zip(self.optimizer.param_groups, self.base_lrs):
+            pg['lr'] = max(self.min_lr, base_lr * factor)
+        
+        return self.optimizer.param_groups[0]['lr']
+
+
+# ============================================================
+# 🆕 TOP-K METRICS CON STATISTICHE PER SS
+# ============================================================
+def compute_topk_metrics_with_ss(logits_aa, logits_cluster_all, y_aa, y_cl, y_ss,
+                                  aa_to_n_clusters, k_values=[1, 5, 10, 20],
+                                  ss_names=None):
+    """
+    Calcola Top-K accuracy per AA e Joint (AA+CL) + statistiche per ogni tipo di SS
+    
+    Args:
+        y_ss: tensor con label SS per il residuo centrale
+        ss_names: dict mapping {ss_idx: "nome"} (es. {0: "Helix", 1: "Sheet", ...})
+    
+    Returns:
+        dict con chiavi:
+        - topk_aa: {1: acc1, 5: acc5, ...}
+        - topk_joint: {1: acc1, 5: acc5, ...}
+        - acc_cl_given_true_aa: accuracy cluster dato AA vero
+        - ss_stats: {ss_name: {topk_aa: {...}, topk_joint: {...}, count: N}}
+    """
+    device = logits_aa.device
+    B = logits_aa.size(0)
+    
+    if B == 0:
+        return {f'top{k}_aa': 0.0 for k in k_values} | \
+               {f'top{k}_joint': 0.0 for k in k_values} | \
+               {'acc_cl_given_true_aa': 0.0, 'ss_stats': {}}
+    
+    y_aa = y_aa.to(device).long()
+    y_cl = y_cl.to(device).long()
+    y_ss = y_ss.to(device).long()
+    
+    if ss_names is None:
+        ss_names = {i: f"SS_{i}" for i in range(8)}
+    
+    results = {}
+    
+    # 🆕 Raggruppa sample per tipo di SS
+    ss_groups = defaultdict(list)
+    for i in range(B):
+        ss_idx = int(y_ss[i].item())
+        ss_groups[ss_idx].append(i)
+    
+    # Top-K AA accuracy (globale)
+    for k in k_values:
+        if k > logits_aa.size(1):
+            k = logits_aa.size(1)
+        
+        _, topk_preds = torch.topk(logits_aa, k, dim=1)
+        correct = (topk_preds == y_aa.unsqueeze(1)).any(dim=1)
+        results[f'top{k}_aa'] = correct.float().mean().item()
+    
+    # Cluster accuracy given TRUE AA (globale)
+    correct_cl = 0
+    valid_samples = 0
+    
+    for i in range(B):
+        aa_idx = int(y_aa[i].item())
+        if aa_idx not in aa_to_n_clusters:
+            continue
+        
+        n_cl = aa_to_n_clusters[aa_idx]
+        if n_cl <= 0:
+            continue
+        
+        logits_cl = logits_cluster_all[i, aa_idx, :n_cl]
+        pred_cl = torch.argmax(logits_cl).item()
+        true_cl = int(y_cl[i].item())
+        
+        if true_cl < n_cl:
+            valid_samples += 1
+            if pred_cl == true_cl:
+                correct_cl += 1
+    
+    results['acc_cl_given_true_aa'] = correct_cl / max(1, valid_samples)
+    
+    # Top-K Joint (AA+CL) accuracy (globale)
+    for k in k_values:
+        correct_joint = 0
+        
+        for i in range(B):
+            true_aa = int(y_aa[i].item())
+            true_cl = int(y_cl[i].item())
+            
+            scores = []
+            for aa_idx in range(logits_aa.size(1)):
+                if aa_idx not in aa_to_n_clusters:
+                    continue
+                
+                n_cl = aa_to_n_clusters[aa_idx]
+                logit_aa_i = logits_aa[i, aa_idx].item()
+                
+                for cl_idx in range(n_cl):
+                    logit_cl_i = logits_cluster_all[i, aa_idx, cl_idx].item()
+                    score = logit_aa_i + logit_cl_i
+                    scores.append((score, aa_idx, cl_idx))
+            
+            scores.sort(reverse=True, key=lambda x: x[0])
+            
+            topk_pairs = [(aa, cl) for _, aa, cl in scores[:k]]
+            if (true_aa, true_cl) in topk_pairs:
+                correct_joint += 1
+        
+        results[f'top{k}_joint'] = correct_joint / B
+    
+    # 🆕 STATISTICHE PER OGNI TIPO DI SS
+    ss_stats = {}
+    
+    for ss_idx, sample_indices in ss_groups.items():
+        if len(sample_indices) == 0:
+            continue
+        
+        ss_name = ss_names.get(ss_idx, f"SS_{ss_idx}")
+        ss_stats[ss_name] = {'count': len(sample_indices)}
+        
+        # Top-K AA per questo SS
+        for k in k_values:
+            if k > logits_aa.size(1):
+                k = logits_aa.size(1)
+            
+            correct_ss = 0
+            for i in sample_indices:
+                _, topk_preds = torch.topk(logits_aa[i], k)
+                if y_aa[i] in topk_preds:
+                    correct_ss += 1
+            
+            ss_stats[ss_name][f'top{k}_aa'] = correct_ss / len(sample_indices)
+        
+        # Top-K Joint per questo SS
+        for k in k_values:
+            correct_joint_ss = 0
+            
+            for i in sample_indices:
+                true_aa = int(y_aa[i].item())
+                true_cl = int(y_cl[i].item())
+                
+                scores = []
+                for aa_idx in range(logits_aa.size(1)):
+                    if aa_idx not in aa_to_n_clusters:
+                        continue
+                    
+                    n_cl = aa_to_n_clusters[aa_idx]
+                    logit_aa_i = logits_aa[i, aa_idx].item()
+                    
+                    for cl_idx in range(n_cl):
+                        logit_cl_i = logits_cluster_all[i, aa_idx, cl_idx].item()
+                        score = logit_aa_i + logit_cl_i
+                        scores.append((score, aa_idx, cl_idx))
+                
+                scores.sort(reverse=True, key=lambda x: x[0])
+                
+                topk_pairs = [(aa, cl) for _, aa, cl in scores[:k]]
+                if (true_aa, true_cl) in topk_pairs:
+                    correct_joint_ss += 1
+            
+            ss_stats[ss_name][f'top{k}_joint'] = correct_joint_ss / len(sample_indices)
+        
+        # Cluster accuracy per questo SS
+        correct_cl_ss = 0
+        valid_samples_ss = 0
+        
+        for i in sample_indices:
+            aa_idx = int(y_aa[i].item())
+            if aa_idx not in aa_to_n_clusters:
+                continue
+            
+            n_cl = aa_to_n_clusters[aa_idx]
+            if n_cl <= 0:
+                continue
+            
+            logits_cl = logits_cluster_all[i, aa_idx, :n_cl]
+            pred_cl = torch.argmax(logits_cl).item()
+            true_cl = int(y_cl[i].item())
+            
+            if true_cl < n_cl:
+                valid_samples_ss += 1
+                if pred_cl == true_cl:
+                    correct_cl_ss += 1
+        
+        ss_stats[ss_name]['acc_cl_given_true_aa'] = correct_cl_ss / max(1, valid_samples_ss)
+    
+    results['ss_stats'] = ss_stats
+    
+    return results
+
+
+# ============================================================
+# TRAINING CON SS STATS
+# ============================================================
+def train_epoch_v2(model, loader, opt, aa_to_n_clusters, 
+                   lambda_cl=0.001, grad_clip=1.0, device='cuda',
+                   label_smoothing=0.1, use_mixup=False, mixup_alpha=0.2,
+                   ss_names=None):
+    model.train()
+    
+    loss_fn_aa = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+    loss_fn_cl = nn.CrossEntropyLoss(label_smoothing=label_smoothing * 0.5)
+    
+    total_loss_aa  = 0.0
+    total_loss_cl  = 0.0
+    total_loss     = 0.0
+    all_metrics = {f'top{k}_aa': 0.0 for k in [1, 5, 10]}
+    all_metrics.update({f'top{k}_joint': 0.0 for k in [1, 5, 10]})
+    n_batches = 0
+    
+    for batch in loader:
+        batch = {k: v.to(device) if torch.is_tensor(v) else v for k, v in batch.items()}
+        
+        B = batch['aa'].size(0)
+        
+        mixup_lambda = None
+        mixup_indices = None
+        if use_mixup and np.random.random() > 0.5:
+            mixup_lambda = np.random.beta(mixup_alpha, mixup_alpha)
+            mixup_indices = torch.randperm(B, device=device)
+        
+        logits_aa, logits_cluster_all, valid_mask = model(
+            batch, mixup_lambda=mixup_lambda, mixup_indices=mixup_indices
+        )
+        
+        y_aa = batch['y_aa'].to(device)
+        y_cl = batch['y_cl'].to(device)
+        
+        if mixup_lambda is not None:
+            loss_aa = mixup_lambda * loss_fn_aa(logits_aa, y_aa) + \
+                      (1 - mixup_lambda) * loss_fn_aa(logits_aa, y_aa[mixup_indices])
+        else:
+            loss_aa = loss_fn_aa(logits_aa, y_aa)
+        
+        loss_cl_list = []
+        for i in range(B):
+            aa_idx = int(y_aa[i].item())
+            if aa_idx not in aa_to_n_clusters:
+                continue
+            n_cl = aa_to_n_clusters[aa_idx]
+            if n_cl <= 0:
+                continue
+            
+            logits_i = logits_cluster_all[i, aa_idx, :n_cl].unsqueeze(0)
+            target_i = y_cl[i].unsqueeze(0)
+            if int(target_i.item()) >= n_cl:
+                target_i = torch.clamp(target_i, 0, n_cl - 1)
+            
+            loss_cl_list.append(loss_fn_cl(logits_i, target_i))
+        
+        loss_cl = torch.stack(loss_cl_list).mean() if loss_cl_list else torch.tensor(0.0, device=device)
+        loss = loss_aa + lambda_cl * loss_cl
+        
+        opt.zero_grad()
+        loss.backward()
+        if grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        opt.step()
+        
+        total_loss_aa += loss_aa.item()  # log solo loss_aa, coerente con val
+        total_loss_cl += loss_cl.item()
+        total_loss    += loss.item()
+        
+        # Metriche senza SS stats durante training (troppo verbose)
+        with torch.no_grad():
+            L = batch['aa'].size(1)
+            center = L // 2
+            y_ss = batch['ss'][:, center].to(device)
+            
+            metrics = compute_topk_metrics_with_ss(
+                logits_aa, logits_cluster_all, y_aa, y_cl, y_ss, aa_to_n_clusters,
+                k_values=[1, 5, 10], ss_names=ss_names
+            )
+            for k in all_metrics:
+                all_metrics[k] += metrics[k]
+        
+        n_batches += 1
+    
+    total_loss_aa /= n_batches
+    total_loss_cl /= n_batches
+    total_loss    /= n_batches
+    for k in all_metrics:
+        all_metrics[k] /= n_batches
+    
+    return {'loss': total_loss_aa, 'loss_aa': total_loss_aa, 'loss_cl': total_loss_cl, 'loss_total': total_loss, **all_metrics}
+
+
+def eval_epoch_v2(model, loader, aa_to_n_clusters, lambda_cl=0.001, device='cuda',
+                  ss_names=None, verbose_ss=False):
+    """Evaluation con metriche SS complete"""
+    model.eval()
+    
+    loss_fn_aa = nn.CrossEntropyLoss()
+    loss_fn_cl = nn.CrossEntropyLoss()
+    
+    total_loss_aa  = 0.0
+    total_loss_cl  = 0.0
+    total_loss     = 0.0
+    all_metrics = {f'top{k}_aa': 0.0 for k in [1, 5, 10, 20]}
+    all_metrics.update({f'top{k}_joint': 0.0 for k in [1, 5, 10, 20]})
+    all_metrics['acc_cl_given_true_aa'] = 0.0
+    
+    # 🆕 Accumula SS stats
+    ss_stats_accum = defaultdict(lambda: defaultdict(list))
+    
+    n_batches = 0
+    
+    with torch.no_grad():
+        for batch in loader:
+            batch = {k: v.to(device) if torch.is_tensor(v) else v for k, v in batch.items()}
+            
+            logits_aa, logits_cluster_all, valid_mask = model(batch)
+            
+            y_aa = batch['y_aa'].to(device)
+            y_cl = batch['y_cl'].to(device)
+            
+            # Estrai SS del residuo centrale
+            L = batch['aa'].size(1)
+            center = L // 2
+            y_ss = batch['ss'][:, center].to(device)
+            
+            loss_aa = loss_fn_aa(logits_aa, y_aa)
+            
+            B = logits_aa.size(0)
+            loss_cl_list = []
+            
+            for i in range(B):
+                aa_idx = int(y_aa[i].item())
+                if aa_idx not in aa_to_n_clusters:
+                    continue
+                n_cl = aa_to_n_clusters[aa_idx]
+                if n_cl <= 0:
+                    continue
+                
+                logits_i = logits_cluster_all[i, aa_idx, :n_cl].unsqueeze(0)
+                target_i = y_cl[i].unsqueeze(0)
+                true_cl = int(target_i.item())
+                
+                if true_cl >= n_cl:
+                    target_i = torch.clamp(target_i, 0, n_cl - 1)
+                
+                loss_cl_list.append(loss_fn_cl(logits_i, target_i))
+            
+            loss_cl = torch.stack(loss_cl_list).mean() if loss_cl_list else torch.tensor(0.0, device=device)
+            loss = loss_aa + lambda_cl * loss_cl
+            
+            total_loss_aa += loss_aa.item()
+            total_loss_cl += loss_cl.item()
+            total_loss    += loss.item()
+            
+            # Calcola metriche CON SS stats
+            metrics = compute_topk_metrics_with_ss(
+                logits_aa, logits_cluster_all, y_aa, y_cl, y_ss, aa_to_n_clusters,
+                k_values=[1, 5, 10, 20], ss_names=ss_names
+            )
+            
+            for k in all_metrics:
+                if k != 'ss_stats':
+                    all_metrics[k] += metrics[k]
+            
+            # Accumula SS stats
+            for ss_name, ss_dict in metrics['ss_stats'].items():
+                for metric_name, value in ss_dict.items():
+                    if metric_name != 'count':
+                        ss_stats_accum[ss_name][metric_name].append(value)
+                    else:
+                        if 'count' not in ss_stats_accum[ss_name]:
+                            ss_stats_accum[ss_name]['count'] = 0
+                        ss_stats_accum[ss_name]['count'] += value
+            
+            n_batches += 1
+    
+    total_loss_aa /= n_batches
+    total_loss_cl /= n_batches
+    total_loss    /= n_batches
+    for k in all_metrics:
+        all_metrics[k] /= n_batches
+    
+    # 🆕 Calcola media SS stats
+    ss_stats_final = {}
+    for ss_name, metrics_dict in ss_stats_accum.items():
+        ss_stats_final[ss_name] = {'count': metrics_dict['count']}
+        for metric_name, values in metrics_dict.items():
+            if metric_name != 'count':
+                ss_stats_final[ss_name][metric_name] = sum(values) / len(values)
+    
+    all_metrics['ss_stats'] = ss_stats_final
+    
+    # 🆕 Stampa SS stats se richiesto
+    if verbose_ss and ss_stats_final:
+        print("\n  📊 Secondary Structure Statistics:")
+        for ss_name in sorted(ss_stats_final.keys()):
+            ss_dict = ss_stats_final[ss_name]
+            print(f"    {ss_name:12s} (n={ss_dict['count']:4.0f}): "
+                  f"Top1={ss_dict.get('top1_aa', 0):.3f} "
+                  f"Top5={ss_dict.get('top5_aa', 0):.3f} "
+                  f"Top10={ss_dict.get('top10_aa', 0):.3f} | "
+                  f"Joint Top5={ss_dict.get('top5_joint', 0):.3f}")
+    
+    return {'loss': total_loss_aa, 'loss_aa': total_loss_aa, 'loss_cl': total_loss_cl, 'loss_total': total_loss, **all_metrics}
+
+
+# ============================================================
+# MAIN TRAINING v2
+# ============================================================
+def train_mlm_v2(args):
+    from dataset import Windows3Dataset, make_loaders_with_exposed_val
+    from rotamer_library import load_rotamer_library
+    from torch.optim import AdamW
+    
+    device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
+    
+    print("="*60)
+    print("LOADING DATA")
+    print("="*60)
+    
+    rotlib = load_rotamer_library(args.rotamer_csv)
+    
+    ds = Windows3Dataset(args.data, rotamer_lib=rotlib, mask_central=True, seed=args.seed)
+    ds_test = Windows3Dataset(args.test_data, rotamer_lib=rotlib, mask_central=True, seed=args.seed)
+    
+    # 🆕 Ottieni mapping SS names
+    ss_names = getattr(ds, 'ss_names', {i: f"SS_{i}" for i in range(8)})
+    print(f"\n📋 Secondary Structure Types: {ss_names}")
+    
+    train_loader, val_loader, test_loader = make_loaders_with_exposed_val(
+        ds, ds_test, 
+        val_size=args.val_size,
+        batch_size=args.batch_size, 
+        seed=args.seed,
+        sasa_threshold=args.sasa_threshold
+    )
+    
+    print(f"Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}, Test: {len(test_loader.dataset)}")
+    
+    print("\n" + "="*60)
+    print("INITIALIZING PROTEIN MLM v2")
+    print("="*60)
+    
+    aa_to_n_clusters = ds.get_aa_to_n_clusters()
+    
+    model = ProteinMLM_v2(
+        n_aa=ds.n_aa - 1,
+        aa_to_n_clusters=aa_to_n_clusters,
+        n_pos=ds.n_pos,
+        n_ss=ds.n_ss,
+        d_embed=args.d_embed,
+        d_hidden=args.d_hidden,
+        n_lstm_layers=args.lstm_layers,
+        dropout=args.dropout,
+        embed_dropout=args.embed_dropout
+    ).to(device)
+    
+    opt = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    
+    scheduler = WarmupCosineScheduler(
+        opt, 
+        warmup_epochs=args.warmup_epochs,
+        total_epochs=args.epochs,
+        min_lr=args.lr * 0.01
+    )
+    
+    print("\n" + "="*60)
+    print("TRAINING START")
+    print(f"  Label smoothing: {args.label_smoothing}")
+    print(f"  Mixup: {args.use_mixup} (alpha={args.mixup_alpha})")
+    print(f"  Warmup epochs: {args.warmup_epochs}")
+    print("="*60)
+    
+    best_top5 = 0.0
+    patience_counter = 0
+    
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    
+    history = {'train_loss': [], 'val_loss': [], 'lr': [],
+               'train_top1_aa': [], 'val_top1_aa': [],
+               'train_top5_aa': [], 'val_top5_aa': [],
+               'train_top10_aa': [], 'val_top10_aa': [],
+               'val_ss_stats': []}  # 🆕 History per SS stats
+    
+    for epoch in range(1, args.epochs + 1):
+        current_lr = scheduler.step(epoch - 1)
+        
+        train_metrics = train_epoch_v2(
+            model, train_loader, opt, aa_to_n_clusters,
+            lambda_cl=args.lambda_cl, grad_clip=args.grad_clip, device=device,
+            label_smoothing=args.label_smoothing,
+            use_mixup=args.use_mixup, mixup_alpha=args.mixup_alpha,
+            ss_names=ss_names
+        )
+        
+        # 🆕 Mostra SS stats ogni 10 epoche durante validation
+        verbose_ss = (epoch % 10 == 0 or epoch == args.epochs)
+        
+        val_metrics = eval_epoch_v2(
+            model, val_loader, aa_to_n_clusters,
+            lambda_cl=args.lambda_cl, device=device,
+            ss_names=ss_names, verbose_ss=verbose_ss
+        )
+        
+        print(f"[{epoch:03d}] lr={current_lr:.2e} | Train: L={train_metrics['loss']:.3f} "
+              f"Top1={train_metrics['top1_aa']:.3f} Top5={train_metrics['top5_aa']:.3f}")
+        print(f"       Val: L={val_metrics['loss']:.3f} "
+              f"Top1={val_metrics['top1_aa']:.3f} "
+              f"Top5={val_metrics['top5_aa']:.3f} "
+              f"Top10={val_metrics['top10_aa']:.3f}")
+        
+        # Save history
+        history['train_loss'].append(train_metrics['loss'])
+        history['val_loss'].append(val_metrics['loss'])
+        history['lr'].append(current_lr)
+        history['train_top1_aa'].append(train_metrics['top1_aa'])
+        history['val_top1_aa'].append(val_metrics['top1_aa'])
+        history['train_top5_aa'].append(train_metrics['top5_aa'])
+        history['val_top5_aa'].append(val_metrics['top5_aa'])
+        history['train_top10_aa'].append(train_metrics['top10_aa'])
+        history['val_top10_aa'].append(val_metrics['top10_aa'])
+        history['val_ss_stats'].append(val_metrics.get('ss_stats', {}))
+        
+        # Early stopping su top-5
+        if val_metrics['top5_aa'] > best_top5:
+            best_top5 = val_metrics['top5_aa']
+            best_val_loss = val_metrics['loss']
+            patience_counter = 0
+            
+            torch.save({
+                'model': model.state_dict(),
+                'meta': {'n_aa': ds.n_aa, 'aa_to_n_clusters': aa_to_n_clusters, 
+                        'ss_names': ss_names, 'args': vars(args)},
+                'epoch': epoch
+            }, outdir / 'best_model.pt')
+            
+            print(f"       ✓ Best (Top-5={best_top5:.3f})")
+        else:
+            patience_counter += 1
+            if patience_counter >= args.patience:
+                print(f"\nEarly stopping at epoch {epoch}")
+                break
+    
+    with open(outdir / 'history.json', 'w') as f:
+        json.dump(history, f, indent=2)
+    
+    # Test
+    print("\n" + "="*60)
+    print("TEST EVALUATION")
+    print("="*60)
+    
+    ckpt = torch.load(outdir / 'best_model.pt', map_location=device)
+    model.load_state_dict(ckpt['model'])
+    
+    # 🆕 Test con SS stats verbose
+    test_metrics = eval_epoch_v2(
+        model, test_loader, aa_to_n_clusters,
+        lambda_cl=args.lambda_cl, device=device,
+        ss_names=ss_names, verbose_ss=True
+    )
+    
+    print(f"\n{'='*60}")
+    print(f"OVERALL RESULTS:")
+    print(f"  Top-1  AA:  {test_metrics['top1_aa']:.3f} ({test_metrics['top1_aa']*100:.1f}%)")
+    print(f"  Top-5  AA:  {test_metrics['top5_aa']:.3f} ({test_metrics['top5_aa']*100:.1f}%)")
+    print(f"  Top-10 AA:  {test_metrics['top10_aa']:.3f} ({test_metrics['top10_aa']*100:.1f}%)")
+    print(f"  Top-20 AA:  {test_metrics['top20_aa']:.3f} ({test_metrics['top20_aa']*100:.1f}%)")
+    print(f"\n  Top-5  Joint:  {test_metrics['top5_joint']:.3f} ({test_metrics['top5_joint']*100:.1f}%)")
+    print(f"  Top-10 Joint:  {test_metrics['top10_joint']:.3f} ({test_metrics['top10_joint']*100:.1f}%)")
+    print(f"  Cluster (given true AA): {test_metrics['acc_cl_given_true_aa']:.3f}")
+    print("="*60)
+    
+    # 🆕 Salva SS stats dettagliate
+    if 'ss_stats' in test_metrics:
+        with open(outdir / 'test_ss_stats.json', 'w') as f:
+            json.dump(test_metrics['ss_stats'], f, indent=2)
+        
+        print("\n📊 Test SS statistics saved to test_ss_stats.json")
+    
+    return outdir / 'best_model.pt'
+
+
+if __name__ == "__main__":
+    import argparse
+    
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", required=True)
+    ap.add_argument("--test_data", required=True)
+    ap.add_argument("--rotamer_csv", default="rotamer_localmax_maxdens.csv")
+    ap.add_argument("--outdir", default="runs/mlm_topk")
+    
+    ap.add_argument("--epochs", type=int, default=150)
+    ap.add_argument("--batch_size", type=int, default=32)
+    ap.add_argument("--val_size", type=int, default=146)
+    ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--weight_decay", type=float, default=1e-4)
+    ap.add_argument("--grad_clip", type=float, default=1.0)
+    ap.add_argument("--patience", type=int, default=30)
+    
+    ap.add_argument("--d_embed", type=int, default=128)
+    ap.add_argument("--d_hidden", type=int, default=256)
+    ap.add_argument("--lstm_layers", type=int, default=2)
+    ap.add_argument("--dropout", type=float, default=0.2)
+    ap.add_argument("--lambda_cl", type=float, default=1.0)
+    
+    ap.add_argument("--embed_dropout", type=float, default=0.3)
+    ap.add_argument("--label_smoothing", type=float, default=0.1)
+    ap.add_argument("--use_mixup", action="store_true")
+    ap.add_argument("--mixup_alpha", type=float, default=0.2)
+    ap.add_argument("--warmup_epochs", type=int, default=5)
+    
+    ap.add_argument("--sasa_threshold", type=float, default=0.1199,
+                    help="SASA threshold to define exposed residues")
+    
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--cpu", action="store_true")
+    
+    args = ap.parse_args()
+    
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    
+    best = train_mlm_v2(args)
+    print(f"\nBest model: {best}")

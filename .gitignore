@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Dati e output pesanti (di solito troppo grandi/generati per il repo)
+*.npz
+*.dssp
+*.pdb
+runs/
+teachers/
+teachers1/
+windows_all*.csv
+windows_all*.json
+
+# Ambienti
+.conda/
+*.venv/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
