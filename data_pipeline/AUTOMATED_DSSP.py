@@ -3,8 +3,9 @@
 Script to run DSSP on all PDB files in a directory,
 parse secondary structure and solvent accessibility for a specified chain,
 and compute normalized ACC based on average SASA values.
-Utilizza os.system per chiamare mkdssp come da terminale e gestisce errori di esecuzione.
-Ora accetta un parametro --chain per indicare il chain ID.
+Uses os.system to call mkdssp exactly as it would be called from the
+terminal, and handles execution errors.
+Accepts a --chain parameter to indicate which chain ID to process.
 """
 import os
 import argparse
@@ -26,9 +27,15 @@ ONE_TO_THREE = {
 
 def run_dssp(pdb_path, dssp_path):
     """
-    Esegue mkdssp usando os.system, come da terminale Linux:
+    Runs mkdssp via os.system, equivalent to the Linux terminal command:
       mkdssp -i input.pdb -o output.dssp
-    Ritorna True se l'output è stato generato, False altrimenti.
+
+    Args:
+        pdb_path: Path to the input PDB file.
+        dssp_path: Path where the DSSP output file should be written.
+
+    Returns:
+        True if the output file was successfully generated, False otherwise.
     """
     cmd = f"mkdssp -i '{pdb_path}' -o '{dssp_path}'"
     rc = os.system(cmd)
@@ -37,13 +44,23 @@ def run_dssp(pdb_path, dssp_path):
 
 def parse_dssp_file(dssp_path, target_chain):
     """
-    Parse a DSSP output file, estraendo per ogni residuo:
+    Parses a DSSP output file, extracting for each residue:
       - chain ID,
-      - numero residuo,
-      - amminoacido 3-lettere,
-      - struttura secondaria,
-      - ACC grezza e normalizzata.
-    Filtra solo i residui della chain target_chain.
+      - residue number,
+      - 3-letter amino acid code,
+      - secondary structure,
+      - raw and normalized ACC (solvent accessibility).
+    Only residues belonging to `target_chain` are kept.
+
+    Args:
+        dssp_path: Path to the DSSP output file to parse.
+        target_chain: Chain ID (single character, e.g. "A", "E") to filter
+            residues by. Residues from any other chain are skipped.
+
+    Returns:
+        List of dicts, one per matching residue, with keys:
+        PDB, Chain, ResNum, AA, SS, ACC_raw, ACC_norm% (0-100 scale),
+        ACC_norm (0-1 scale).
     """
     records = []
     start = False
@@ -55,12 +72,12 @@ def parse_dssp_file(dssp_path, target_chain):
             if not start:
                 continue
 
-            # Estrai chain ID (colonna 12, indice 11)
+            # Extract chain ID (column 12, index 11)
             chain_id = line[11].strip()
             if chain_id != target_chain:
                 continue
 
-            # Estrai campi utili
+            # Extract useful fields
             res_num = line[5:10].strip()
             aa1 = line[13].strip()
             ss = line[16].strip()
@@ -97,9 +114,15 @@ def parse_dssp_file(dssp_path, target_chain):
 
 def main(input_dir, output_csv, target_chain):
     """
-    Processa tutti i .pdb in input_dir, genera .dssp,
-    estrae dati per la chain target_chain e salva su CSV.
-    Gestisce errori di creazione file DSSP.
+    Processes every .pdb file in `input_dir`, generates the corresponding
+    .dssp file, extracts data for `target_chain`, and saves the combined
+    results to a CSV file. Handles errors when the DSSP output file cannot
+    be created.
+
+    Args:
+        input_dir: Directory containing the input .pdb files.
+        output_csv: Path to the CSV file where results will be written.
+        target_chain: Chain ID (single character) to filter residues by.
     """
     all_data = []
     os.makedirs(os.path.dirname(output_csv) or '.', exist_ok=True)
@@ -117,10 +140,10 @@ def main(input_dir, output_csv, target_chain):
             records = parse_dssp_file(dssp_path, target_chain)
             all_data.extend(records)
         except FileNotFoundError:
-            print(f"Warning: output file {dssp_path} non trovato, skip.")
+            print(f"Warning: output file {dssp_path} not found, skipping.")
 
     if not all_data:
-        print(f"Nessun dato raccolto per chain {target_chain}")
+        print(f"No data collected for chain {target_chain}")
         return
     df = pd.DataFrame(all_data)
     df.to_csv(output_csv, index=False)
@@ -129,17 +152,19 @@ def main(input_dir, output_csv, target_chain):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Batch DSSP parsing e ACC normalization per chain specifica'
+        description='Batch DSSP parsing and per-chain ACC (solvent accessibility) normalization'
     )
     parser.add_argument(
-        'input_dir', help='Directory with PDB files'
+        'input_dir',
+        help='Directory containing the input .pdb files to process'
     )
     parser.add_argument(
-        'output_csv', help='Path to output CSV file'
+        'output_csv',
+        help='Path to the output CSV file where the combined results will be saved'
     )
     parser.add_argument(
         '--chain', '-c', default='E',
-        help='Chain ID to filter (default: E)'
+        help='Chain ID to extract data for, e.g. A, B, E (default: E)'
     )
     args = parser.parse_args()
     main(args.input_dir, args.output_csv, args.chain)
