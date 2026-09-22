@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-create_balanced_testset_sasa_exposure.py — Crea un test set bilanciato per:
-1. 50% Exposed / 50% Buried (usando SASA threshold)
-2. Distribuzione uniforme degli AA in ciascun gruppo
-3. ESCLUDE automaticamente gli AA rari: P, W, C, M, R
-4. Preserva la feature SS (Secondary Structure)
+create_balanced_testset_sasa_exposure.py -- Builds a balanced test set with:
+1. 50% Exposed / 50% Buried (using a SASA threshold)
+2. Uniform amino acid distribution within each group
+3. Automatically EXCLUDES rare amino acids: P, W, C, M, R
+4. Preserves the SS (Secondary Structure) feature
 
-Esempio:
+Example:
   python create_balanced_testset.py \
     --input windows_all.json \
     --output windows_testset.json \
@@ -24,14 +24,14 @@ from pathlib import Path
 from collections import defaultdict
 import argparse
 
-# Ordine standard degli amminoacidi
+# Standard amino acid order
 AA_ORDER = "ACDEFGHIKLMNPQRSTVWY"
 AA_TO_IDX = {aa: i for i, aa in enumerate(AA_ORDER)}
 
-# AA da ESCLUDERE (troppo rari)
+# Amino acids to EXCLUDE (too rare)
 EXCLUDED_AA = {'P', 'W', 'C', 'M', 'R'}
 
-# Mappatura da codice 3 lettere a 1 lettera
+# Mapping from 3-letter to 1-letter code
 AA_3_TO_1 = {
     'ALA': 'A', 'CYS': 'C', 'ASP': 'D', 'GLU': 'E', 'PHE': 'F',
     'GLY': 'G', 'HIS': 'H', 'ILE': 'I', 'LYS': 'K', 'LEU': 'L',
@@ -39,12 +39,12 @@ AA_3_TO_1 = {
     'SER': 'S', 'THR': 'T', 'VAL': 'V', 'TRP': 'W', 'TYR': 'Y',
 }
 
-# Aggiungi varianti case-insensitive
+# Add case-insensitive variants
 for aa3, aa1 in list(AA_3_TO_1.items()):
     AA_3_TO_1[aa3.lower()] = aa1
     AA_3_TO_1[aa3.capitalize()] = aa1
 
-# Mappatura SS
+# SS (Secondary Structure) code mapping
 SS_MAP = {
     'H': 'Helix', 'E': 'Strand', 'C': 'Coil', 'S': 'Bend',
     'T': 'Turn', 'G': '310helix', 'I': 'Pihelix', 'B': 'Bridge',
@@ -53,7 +53,15 @@ SS_MAP = {
 
 
 def load_windows(path: Path):
-    """Carica le finestre dal file JSON"""
+    """
+    Loads the list of windows from a JSON file.
+
+    Args:
+        path: Path to the input JSON file (a list of window dicts).
+
+    Returns:
+        The parsed JSON content (typically a list of window dicts).
+    """
     with path.open('r', encoding='utf-8') as f:
         data = json.load(f)
     return data
@@ -61,17 +69,24 @@ def load_windows(path: Path):
 
 def group_by_aa_and_exposure(windows, sasa_threshold=0.13, debug=True):
     """
-    Raggruppa le finestre per (AA, exposure_type).
-    ESCLUDE automaticamente gli AA in EXCLUDED_AA.
-    Preserva la feature SS per ogni residuo.
-    
+    Groups windows by (central amino acid, exposure type).
+    Automatically EXCLUDES amino acids listed in EXCLUDED_AA.
+    Preserves the SS feature for each residue.
+    Only windows whose central residue's secondary structure is Strand
+    or Coil are kept (see the filter below).
+
     Args:
-        sasa_threshold: Soglia per definire exposed (>= threshold)
-    
+        windows: List of window dicts (each with a "residues" list).
+        sasa_threshold: Threshold used to define "exposed" (SASA >=
+            threshold) vs "buried" (SASA < threshold).
+        debug: If True, print diagnostic information about the first
+            window and about excluded/unrecognized amino acids.
+
     Returns:
-        dict: {(aa, 'exposed'|'buried'): [windows]},
-        dict: {(aa, exposure): [sasa_values]},
-        dict: {(aa, exposure): [ss_distributions]}
+        tuple:
+            grouped (dict): {(aa, 'exposed'|'buried'): [windows]}
+            sasa_values (dict): {(aa, exposure): [sasa_values]}
+            ss_distributions (dict): {(aa, exposure): {ss_type: count}}
     """
     grouped = defaultdict(list)
     sasa_values = defaultdict(list)
@@ -79,14 +94,14 @@ def group_by_aa_and_exposure(windows, sasa_threshold=0.13, debug=True):
     unrecognized = set()
     excluded_count = defaultdict(int)
     
-    # Debug: analizza la prima finestra
+    # Debug: inspect the first window
     if debug and len(windows) > 0:
-        print("\n[DEBUG] Struttura prima finestra:")
+        print("\n[DEBUG] Structure of the first window:")
         first = windows[0]
         print(f"  Window keys: {list(first.keys())}")
         if 'residues' in first and len(first['residues']) >= 3:
             res2 = first['residues'][2]
-            print(f"  Residue[2] (centrale):")
+            print(f"  Residue[2] (central):")
             print(f"    AA: {res2.get('AA')}")
             print(f"    ACC_norm: {res2.get('ACC_norm')}")
             print(f"    SS: {res2.get('SS', 'N/A')}")
@@ -94,11 +109,11 @@ def group_by_aa_and_exposure(windows, sasa_threshold=0.13, debug=True):
     for window in windows:
         residues = window.get('residues', [])
         
-        # Il residuo centrale è quello in posizione 2 (0-indexed: 0,1,2,3,4)
+        # The central residue is at position 2 (0-indexed: 0,1,2,3,4)
         if len(residues) >= 5:
             central_residue = residues[2]
             
-            # Estrai AA
+            # Extract AA
             central_aa_3letter = (
                 central_residue.get('AA') or
                 central_residue.get('aa') or
@@ -108,35 +123,35 @@ def group_by_aa_and_exposure(windows, sasa_threshold=0.13, debug=True):
             )
             central_aa = AA_3_TO_1.get(central_aa_3letter, '')
             
-            # Estrai SASA normalizzato
+            # Extract normalized SASA
             sasa = central_residue.get('ACC_norm')
             
-            # Estrai SS
+            # Extract SS
             ss = central_residue.get('SS')
-            ss_label = SS_MAP.get(ss, 'Coil') # Default a Coil se vuoto
+            ss_label = SS_MAP.get(ss, 'Coil')  # Default to Coil if empty
 
-            # FILTRO: Prendi solo E e C (Strand e Coil)
+            # FILTER: keep only E and C (Strand and Coil)
             if ss_label not in ['Strand', 'Coil']:
                 continue
             
-            # Filtra AA esclusi
+            # Filter out excluded amino acids
             if central_aa in EXCLUDED_AA:
                 excluded_count[central_aa] += 1
                 continue
             
-            # Determina exposure type
+            # Determine exposure type
             if sasa is not None:
                 exposure_type = 'exposed' if sasa >= sasa_threshold else 'buried'
             else:
-                continue  # Skip se SASA non disponibile
+                continue  # Skip if SASA is not available
             
-            # Raggruppa solo AA validi
+            # Group only valid amino acids
             if central_aa and central_aa in AA_ORDER:
                 key = (central_aa, exposure_type)
                 grouped[key].append(window)
                 sasa_values[key].append(float(sasa))
                 
-                # Conta distribuzione SS
+                # Count SS distribution
                 ss_label = SS_MAP.get(ss, 'Missing')
                 ss_distributions[key][ss_label] += 1
                 
@@ -145,68 +160,76 @@ def group_by_aa_and_exposure(windows, sasa_threshold=0.13, debug=True):
     
     if debug:
         if excluded_count:
-            print(f"\n[DEBUG] AA ESCLUSI automaticamente:")
+            print(f"\n[DEBUG] Amino acids automatically EXCLUDED:")
             for aa, count in sorted(excluded_count.items()):
-                print(f"  {aa}: {count} finestre → RIMANGONO NEL TRAINING")
+                print(f"  {aa}: {count} windows -> REMAIN IN TRAINING SET")
         if unrecognized:
-            print(f"\n[DEBUG] Amminoacidi non riconosciuti: {unrecognized}")
+            print(f"\n[DEBUG] Unrecognized amino acids: {unrecognized}")
     
     return grouped, sasa_values, ss_distributions
 
 
 def select_balanced_samples(grouped, sasa_values, ss_distributions, n_total=300, seed=42):
     """
-    Seleziona campioni bilanciati per:
+    Selects a balanced set of samples such that:
     1. 50% exposed / 50% buried
-    2. Distribuzione uniforme degli AA in ciascun gruppo
-    3. Preserva la distribuzione naturale di SS
-    
+    2. Uniform amino acid distribution within each group
+    3. The natural SS distribution is preserved
+
     Args:
-        grouped: dict {(aa, exposure): [windows]}
-        sasa_values: dict {(aa, exposure): [sasa_values]}
-        ss_distributions: dict {(aa, exposure): {ss_type: count}}
-        n_total: numero totale di campioni desiderati
-        seed: random seed
-    
+        grouped: dict {(aa, exposure): [windows]}, as returned by
+            `group_by_aa_and_exposure`.
+        sasa_values: dict {(aa, exposure): [sasa_values]}, as returned by
+            `group_by_aa_and_exposure`.
+        ss_distributions: dict {(aa, exposure): {ss_type: count}}, as
+            returned by `group_by_aa_and_exposure`.
+        n_total: Total number of samples to select (split ~50/50
+            exposed/buried).
+        seed: Random seed for reproducibility.
+
     Returns:
-        list di finestre selezionate, dict con statistiche
+        tuple:
+            selected (list): The list of selected window dicts.
+            stats (dict): {(aa, exposure): {...}} per-group statistics
+                (availability, selection count, SASA mean/std/min/max,
+                SS distribution, exclusion reason if any).
     """
     np.random.seed(seed)
     
-    # Determina quali AA sono disponibili
+    # Determine which amino acids are available
     available_aa = sorted([aa for aa in AA_ORDER if aa not in EXCLUDED_AA])
     n_aa_available = len(available_aa)
     
     if n_aa_available == 0:
-        print("⚠️  Nessun amminoacido disponibile!")
+        print("[WARN] No amino acid available!")
         return [], {}
     
-    print(f"\nAmminoacidi INCLUSI nel test: {n_aa_available}/{len(AA_ORDER)}")
-    print(f"  AA inclusi: {', '.join(available_aa)}")
-    print(f"  AA esclusi: {', '.join(sorted(EXCLUDED_AA))}")
+    print(f"\nAmino acids INCLUDED in the test set: {n_aa_available}/{len(AA_ORDER)}")
+    print(f"  Included AAs: {', '.join(available_aa)}")
+    print(f"  Excluded AAs: {', '.join(sorted(EXCLUDED_AA))}")
     
-    # Split 50/50 tra exposed e buried
+    # 50/50 split between exposed and buried
     n_exposed = n_total // 2
     n_buried = n_total - n_exposed
     
-    print(f"\nStrategia di bilanciamento:")
-    print(f"  Target EXPOSED: {n_exposed} campioni")
-    print(f"  Target BURIED: {n_buried} campioni")
-    print(f"  Campioni per AA per gruppo: ~{n_exposed // n_aa_available} exposed, ~{n_buried // n_aa_available} buried")
+    print(f"\nBalancing strategy:")
+    print(f"  Target EXPOSED: {n_exposed} samples")
+    print(f"  Target BURIED: {n_buried} samples")
+    print(f"  Samples per AA per group: ~{n_exposed // n_aa_available} exposed, ~{n_buried // n_aa_available} buried")
     
     selected = []
     stats = {}
     
-    # Seleziona per ogni gruppo (exposed/buried)
+    # Select for each group (exposed/buried)
     for exposure_type, n_target in [('exposed', n_exposed), ('buried', n_buried)]:
         samples_per_aa = n_target // n_aa_available
         remainder = n_target % n_aa_available
         
-        print(f"\n--- Selezione {exposure_type.upper()} ---")
-        print(f"  Campioni per AA: {samples_per_aa}")
-        print(f"  Campioni extra da distribuire: {remainder}")
+        print(f"\n--- Selecting {exposure_type.upper()} ---")
+        print(f"  Samples per AA: {samples_per_aa}")
+        print(f"  Extra samples to distribute: {remainder}")
         
-        # Fase 1: distribuisci equamente tra AA
+        # Phase 1: distribute evenly across amino acids
         aa_selections = {}
         
         for aa in AA_ORDER:
@@ -220,7 +243,7 @@ def select_balanced_samples(grouped, sasa_values, ss_distributions, n_total=300,
                         'available': 0,
                         'selected': 0,
                         'excluded': True,
-                        'reason': 'AA raro escluso',
+                        'reason': 'Rare AA excluded',
                         'sasa_mean': None,
                         'sasa_std': None,
                         'sasa_min': None,
@@ -250,10 +273,10 @@ def select_balanced_samples(grouped, sasa_values, ss_distributions, n_total=300,
             if n_available == 0:
                 continue
             
-            # Seleziona campioni per questo AA
+            # Select samples for this amino acid
             n_select = min(samples_per_aa, n_available)
             
-            # Selezione random che mantiene la distribuzione naturale di SASA e SS
+            # Random selection that preserves the natural SASA/SS distribution
             selected_indices = np.random.choice(n_available, n_select, replace=False)
             selected_windows = [windows[i] for i in selected_indices]
             
@@ -265,9 +288,9 @@ def select_balanced_samples(grouped, sasa_values, ss_distributions, n_total=300,
                 'available': n_available
             }
         
-        # Fase 2: distribuisci i remainder agli AA con più campioni disponibili
+        # Phase 2: distribute the remainder to amino acids with more samples available
         if remainder > 0:
-            # Crea lista di candidati AA che possono ricevere più campioni
+            # Build a list of amino acid candidates that can receive extra samples
             candidates = []
             for aa in available_aa:
                 key = (aa, exposure_type)
@@ -280,10 +303,10 @@ def select_balanced_samples(grouped, sasa_values, ss_distributions, n_total=300,
                         can_add = avail - selected_count
                         candidates.append((aa, can_add))
             
-            # Ordina per capacità residua
+            # Sort by remaining capacity
             candidates.sort(key=lambda x: x[1], reverse=True)
             
-            # Distribuisci ciclicamente
+            # Distribute cyclically
             for i in range(remainder):
                 if not candidates:
                     break
@@ -292,7 +315,7 @@ def select_balanced_samples(grouped, sasa_values, ss_distributions, n_total=300,
                 key = (aa, exposure_type)
                 windows = grouped[key]
                 
-                # Prendi un campione aggiuntivo non ancora selezionato
+                # Pick one additional sample not yet selected
                 idx = np.random.choice(len(windows))
                 attempts = 0
                 while windows[idx] in selected and attempts < 100:
@@ -307,14 +330,24 @@ def select_balanced_samples(grouped, sasa_values, ss_distributions, n_total=300,
 
 
 def print_statistics(stats, selected, sasa_threshold):
-    """Stampa statistiche sulla selezione con info SASA, exposure e SS"""
+    """
+    Prints statistics about the selection, including SASA, exposure and
+    SS information.
+
+    Args:
+        stats: Per-(AA, exposure) statistics dict, as returned by
+            `select_balanced_samples`.
+        selected: List of selected window dicts.
+        sasa_threshold: SASA threshold used to define exposed vs buried
+            (only used for reporting/labeling).
+    """
     print("\n" + "="*140)
-    print("STATISTICHE SELEZIONE (BILANCIAMENTO AA + EXPOSURE + SS)")
+    print("SELECTION STATISTICS (AA + EXPOSURE + SS BALANCING)")
     print("="*140)
-    print(f"{'AA':<4} {'Exposure':<8} {'Disponibili':<12} {'Selezionati':<12} {'SASA (mean±std)':<25} {'Range SASA':<20} {'SS Dominant':<15} {'Note':<15}")
+    print(f"{'AA':<4} {'Exposure':<8} {'Available':<12} {'Selected':<12} {'SASA (mean+/-std)':<25} {'SASA Range':<20} {'SS Dominant':<15} {'Note':<15}")
     print("-"*140)
     
-    # Contatori
+    # Counters
     total_exposed = 0
     total_buried = 0
     selected_per_aa_exposed = []
@@ -333,15 +366,15 @@ def print_statistics(stats, selected, sasa_threshold):
             sasa_max = info.get('sasa_max')
             ss_dist = info.get('ss_distribution', {})
             
-            # Formatta SASA stats
+            # Format SASA stats
             if sasa_mean is not None:
-                sasa_stats = f"{sasa_mean:.3f}±{sasa_std:.3f}"
+                sasa_stats = f"{sasa_mean:.3f}+/-{sasa_std:.3f}"
                 sasa_range = f"{sasa_min:.3f}-{sasa_max:.3f}"
             else:
                 sasa_stats = "-"
                 sasa_range = "-"
             
-            # Trova SS dominante
+            # Find dominant SS
             if ss_dist:
                 dominant_ss = max(ss_dist.items(), key=lambda x: x[1])
                 ss_info = f"{dominant_ss[0]}({dominant_ss[1]})"
@@ -349,9 +382,9 @@ def print_statistics(stats, selected, sasa_threshold):
                 ss_info = "-"
             
             if info.get('reason'):
-                note = "❌ ESCLUSO"
+                note = "EXCLUDED"
             elif sel > 0:
-                note = "✓ Incluso"
+                note = "Included"
             else:
                 note = "-"
             
@@ -372,40 +405,40 @@ def print_statistics(stats, selected, sasa_threshold):
     print(f"{'TOT':<4} {'ALL':<8} {'':<12} {total_exposed + total_buried:<12}")
     print("="*140)
     
-    # Statistiche di bilanciamento EXPOSURE
-    print(f"\n🎯 BILANCIAMENTO EXPOSURE (threshold SASA={sasa_threshold}):")
+    # EXPOSURE balancing statistics
+    print(f"\nEXPOSURE BALANCE (SASA threshold={sasa_threshold}):")
     print(f"  Exposed: {total_exposed} ({total_exposed/(total_exposed+total_buried)*100:.1f}%)")
     print(f"  Buried:  {total_buried} ({total_buried/(total_exposed+total_buried)*100:.1f}%)")
     
     exposure_imbalance = abs(total_exposed - total_buried)
     if exposure_imbalance <= 2:
-        print("  ✅ Bilanciamento EXPOSURE ottimo!")
+        print("  EXPOSURE balance: excellent")
     elif exposure_imbalance <= 10:
-        print("  ⚠️  Bilanciamento EXPOSURE accettabile")
+        print("  EXPOSURE balance: acceptable")
     else:
-        print("  ❌ Bilanciamento EXPOSURE sbilanciato")
+        print("  EXPOSURE balance: imbalanced")
     
-    # Statistiche di bilanciamento AA (per gruppo)
+    # AA balancing statistics (per group)
     for exposure_type, samples in [('EXPOSED', selected_per_aa_exposed), 
                                     ('BURIED', selected_per_aa_buried)]:
         if samples:
-            print(f"\n🎯 BILANCIAMENTO AA ({exposure_type}, esclusi AA rari):")
-            print(f"  Min campioni: {min(samples)}")
-            print(f"  Max campioni: {max(samples)}")
-            print(f"  Media: {np.mean(samples):.2f}")
+            print(f"\nAA BALANCE ({exposure_type}, rare AAs excluded):")
+            print(f"  Min samples: {min(samples)}")
+            print(f"  Max samples: {max(samples)}")
+            print(f"  Mean: {np.mean(samples):.2f}")
             print(f"  Std dev: {np.std(samples):.2f}")
             print(f"  Range: {max(samples) - min(samples)}")
             
             aa_imbalance = max(samples) - min(samples)
             if aa_imbalance <= 2:
-                print(f"  ✅ Bilanciamento AA ottimo in {exposure_type}!")
+                print(f"  AA balance in {exposure_type}: excellent")
             elif aa_imbalance <= 5:
-                print(f"  ⚠️  Bilanciamento AA accettabile in {exposure_type}")
+                print(f"  AA balance in {exposure_type}: acceptable")
             else:
-                print(f"  ❌ Bilanciamento AA sbilanciato in {exposure_type}")
+                print(f"  AA balance in {exposure_type}: imbalanced")
     
-    # Analisi distribuzione SASA complessiva nel test set
-    print(f"\n📊 DISTRIBUZIONE SASA COMPLESSIVA NEL TEST SET:")
+    # Overall SASA distribution in the test set
+    print(f"\nOVERALL SASA DISTRIBUTION IN THE TEST SET:")
     all_sasa = []
     for window in selected:
         residues = window.get('residues', [])
@@ -415,20 +448,20 @@ def print_statistics(stats, selected, sasa_threshold):
                 all_sasa.append(float(sasa))
     
     if all_sasa:
-        print(f"  Media SASA: {np.mean(all_sasa):.3f}")
-        print(f"  Std SASA: {np.std(all_sasa):.3f}")
-        print(f"  Min SASA: {np.min(all_sasa):.3f}")
-        print(f"  Max SASA: {np.max(all_sasa):.3f}")
-        print(f"  Mediana SASA: {np.median(all_sasa):.3f}")
+        print(f"  SASA mean: {np.mean(all_sasa):.3f}")
+        print(f"  SASA std: {np.std(all_sasa):.3f}")
+        print(f"  SASA min: {np.min(all_sasa):.3f}")
+        print(f"  SASA max: {np.max(all_sasa):.3f}")
+        print(f"  SASA median: {np.median(all_sasa):.3f}")
         
-        # Verifica distribuzione rispetto al threshold
+        # Check the distribution relative to the threshold
         n_above_threshold = sum(1 for s in all_sasa if s >= sasa_threshold)
         n_below_threshold = len(all_sasa) - n_above_threshold
-        print(f"  Campioni SASA >= {sasa_threshold}: {n_above_threshold} ({n_above_threshold/len(all_sasa)*100:.1f}%)")
-        print(f"  Campioni SASA < {sasa_threshold}: {n_below_threshold} ({n_below_threshold/len(all_sasa)*100:.1f}%)")
+        print(f"  Samples with SASA >= {sasa_threshold}: {n_above_threshold} ({n_above_threshold/len(all_sasa)*100:.1f}%)")
+        print(f"  Samples with SASA < {sasa_threshold}: {n_below_threshold} ({n_below_threshold/len(all_sasa)*100:.1f}%)")
     
-    # Analisi distribuzione SS nel test set
-    print(f"\n📊 DISTRIBUZIONE SECONDARY STRUCTURE NEL TEST SET:")
+    # SS distribution in the test set
+    print(f"\nSECONDARY STRUCTURE DISTRIBUTION IN THE TEST SET:")
     ss_counts = defaultdict(int)
     for window in selected:
         residues = window.get('residues', [])
@@ -445,18 +478,24 @@ def print_statistics(stats, selected, sasa_threshold):
 
 
 def save_to_csv(windows, output_path):
-    """Salva le finestre in formato CSV"""
+    """
+    Saves a list of window dicts to a CSV file.
+
+    Args:
+        windows: List of window dicts to save.
+        output_path: Path to the output CSV file.
+    """
     df = pd.DataFrame(windows)
     df.to_csv(output_path, index=False)
-    print(f"✓ CSV salvato: {output_path}")
+    print(f"CSV saved: {output_path}")
 
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Crea un test set bilanciato per AA e EXPOSURE (usando SASA threshold) preservando SS",
+        description="Build a test set balanced by amino acid and EXPOSURE (via a SASA threshold), preserving SS",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Esempio d'uso:
+Example usage:
   python create_balanced_testset.py \\
     --input windows_all.json \\
     --output windows_testset_balanced.json \\
@@ -465,79 +504,79 @@ Esempio d'uso:
     --remove_from_original \\
     --seed 42
 
-Note:
-  - Bilancia su 50% exposed / 50% buried (usando SASA threshold)
-  - All'interno di ogni gruppo, distribuzione uniforme degli AA
-  - Mantiene la distribuzione naturale di SASA e SS per ogni (AA, exposure)
-  - ESCLUDE automaticamente AA rari: P, W, C, M, R
-  - Gli AA esclusi rimangono nel training set
-  - Preserva la feature SS (Secondary Structure) per ogni residuo
+Notes:
+  - Balances on 50% exposed / 50% buried (using the SASA threshold)
+  - Within each group, the amino acid distribution is uniform
+  - Preserves the natural SASA and SS distribution for each (AA, exposure) pair
+  - Automatically EXCLUDES rare amino acids: P, W, C, M, R
+  - Excluded amino acids remain in the training set
+  - Preserves the SS (Secondary Structure) feature for each residue
         """
     )
     ap.add_argument("--input", required=True, 
-                    help="File JSON con le finestre")
+                    help="Input JSON file with the windows")
     ap.add_argument("--output", required=True,
-                    help="File JSON di output per il test set bilanciato")
+                    help="Output JSON file for the balanced test set")
     ap.add_argument("--output_csv", 
-                    help="File CSV di output (default: stesso nome del JSON con .csv)")
+                    help="Output CSV file (default: same name as the JSON output, with .csv extension)")
     ap.add_argument("--n_samples", type=int, default=300,
-                    help="Numero totale di campioni da selezionare (default: 300)")
+                    help="Total number of samples to select (default: 300)")
     ap.add_argument("--sasa_threshold", type=float, default=0.1199,
-                    help="Soglia SASA per definire exposed (>= threshold) vs buried (< threshold)")
+                    help="SASA threshold used to define exposed (>= threshold) vs buried (< threshold)")
     ap.add_argument("--seed", type=int, default=42,
-                    help="Random seed per riproducibilità (default: 42)")
+                    help="Random seed for reproducibility (default: 42)")
     ap.add_argument("--remove_from_original", action="store_true",
-                    help="Rimuovi i campioni selezionati dal file originale")
+                    help="Remove the selected samples from the original input file")
     
     args = ap.parse_args()
     
     input_path = Path(args.input)
     output_path = Path(args.output)
     
-    # Determina il path del CSV
+    # Determine the CSV output path
     if args.output_csv:
         output_csv_path = Path(args.output_csv)
     else:
         output_csv_path = output_path.with_suffix('.csv')
     
     if not input_path.exists():
-        raise SystemExit(f"✗ File non trovato: {input_path}")
+        raise SystemExit(f"File not found: {input_path}")
     
     print("="*140)
-    print("CARICAMENTO DATI - BILANCIAMENTO SU AA + EXPOSURE (SASA THRESHOLD) + SS")
+    print("LOADING DATA - BALANCING ON AA + EXPOSURE (SASA THRESHOLD) + SS")
     print("="*140)
     print(f"Input: {input_path}")
     print(f"Output JSON: {output_path}")
     print(f"Output CSV: {output_csv_path}")
-    print(f"N samples richiesti: {args.n_samples}")
+    print(f"Requested N samples: {args.n_samples}")
     print(f"SASA threshold: {args.sasa_threshold}")
     print(f"Seed: {args.seed}")
     
-    # Carica finestre
+    # Load windows
     windows = load_windows(input_path)
-    print(f"Finestre totali: {len(windows)}")
+    print(f"Total windows: {len(windows)}")
     
-    # Raggruppa per (AA, exposure)
-    print("\nRaggruppamento per (amminoacido, exposure) con analisi SS...")
+    # Group by (AA, exposure)
+    print("\nGrouping by (amino acid, exposure) with SS analysis...")
     grouped, sasa_values, ss_distributions = group_by_aa_and_exposure(
         windows, 
         sasa_threshold=args.sasa_threshold,
         debug=True
     )
     
-    print(f"\nCombinazioni (AA, exposure) trovate: {len(grouped)}")
+    print(f"\n(AA, exposure) combinations found: {len(grouped)}")
     
-    # Analisi disponibilità per exposure
+    # Availability analysis by exposure
     exposed_total = sum(len(v) for k, v in grouped.items() if k[1] == 'exposed')
     buried_total = sum(len(v) for k, v in grouped.items() if k[1] == 'buried')
     
-    print(f"\nDistribuzione nel dataset originale:")
-    print(f"  EXPOSED (SASA >= {args.sasa_threshold}): {exposed_total} finestre ({exposed_total/(exposed_total+buried_total)*100:.1f}%)")
-    print(f"  BURIED (SASA < {args.sasa_threshold}): {buried_total} finestre ({buried_total/(exposed_total+buried_total)*100:.1f}%)")
+    print(f"\nDistribution in the original dataset:")
+    print(f"  EXPOSED (SASA >= {args.sasa_threshold}): {exposed_total} windows ({exposed_total/(exposed_total+buried_total)*100:.1f}%)")
+    print(f"  BURIED (SASA < {args.sasa_threshold}): {buried_total} windows ({buried_total/(exposed_total+buried_total)*100:.1f}%)")
     
-    # Seleziona campioni bilanciati
+    # Select balanced samples
     print("\n" + "="*140)
-    print("SELEZIONE BILANCIATA")
+    print("BALANCED SELECTION")
     print("="*140)
     
     selected, stats = select_balanced_samples(
@@ -545,37 +584,37 @@ Note:
         args.n_samples, args.seed
     )
     
-    # Statistiche
+    # Statistics
     print_statistics(stats, selected, args.sasa_threshold)
     
-    # Salva output JSON
+    # Save JSON output
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open('w', encoding='utf-8') as f:
         json.dump(selected, f, ensure_ascii=False, indent=2)
     
-    print(f"\n✅ Test set bilanciato salvato: {output_path}")
-    print(f"   Campioni selezionati: {len(selected)}")
+    print(f"\nBalanced test set saved: {output_path}")
+    print(f"   Selected samples: {len(selected)}")
     
-    # Salva output CSV
+    # Save CSV output
     save_to_csv(selected, output_csv_path)
     
-    # Rimuovi dal file originale se richiesto
+    # Remove from the original file if requested
     if args.remove_from_original:
-        print("\nRimozione campioni dal file originale...")
+        print("\nRemoving selected samples from the original file...")
         
-        # Crea set di ID selezionati
+        # Build the set of selected IDs
         selected_ids = {w.get('window_id') for w in selected if 'window_id' in w}
         
-        # Mantieni finestre non selezionate
+        # Keep windows that were not selected
         remaining = [w for w in windows if w.get('window_id') not in selected_ids]
         
         with input_path.open('w', encoding='utf-8') as f:
             json.dump(remaining, f, ensure_ascii=False, indent=2)
         
-        print(f"✅ File originale aggiornato: {input_path}")
-        print(f"   Finestre rimanenti: {len(remaining)}")
-        print(f"   Finestre rimosse: {len(windows) - len(remaining)}")
-        print(f"\n💡 Gli AA esclusi ({', '.join(sorted(EXCLUDED_AA))}) sono rimasti TUTTI nel training set")
+        print(f"Original file updated: {input_path}")
+        print(f"   Remaining windows: {len(remaining)}")
+        print(f"   Removed windows: {len(windows) - len(remaining)}")
+        print(f"\nNote: the excluded amino acids ({', '.join(sorted(EXCLUDED_AA))}) all remained in the training set")
 
 
 if __name__ == "__main__":
