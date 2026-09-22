@@ -1,29 +1,29 @@
 """
-Heatmap probabilità di mutazione + Analisi mutazionale completa
-================================================================
+Mutation probability heatmap + full mutational analysis
+=========================================================
 
-Estende mutation_heatmap1_or.py con:
+Extends mutation_heatmap1_or.py with:
 
-  1. Heatmap probabilità (originale, invariata)
-  2. ΔlogP mutational landscape  (20×N matrix, per ogni finestra)
-  3. Entropy profile              (rigidità vs flessibilità per posizione)
-  4. Breaker mutations            (ΔlogP < threshold, default -5)
-  5. Designable positions         (mutazioni tollerate, |ΔlogP| < 1)
-  6. Hotspot detection            (entropy > 75° percentile)
-  7. Fibril core score            (mean |ΔlogP|, posizioni conservate)
-  8. Embedding UMAP/PCA           (clustering strutturale delle finestre)
+  1. Probability heatmap (original, unchanged)
+  2. DeltaLogP mutational landscape  (20xN matrix, per window)
+  3. Entropy profile              (rigidity vs flexibility per position)
+  4. Breaker mutations            (DeltaLogP < threshold, default -5)
+  5. Designable positions         (tolerated mutations, |DeltaLogP| < 1)
+  6. Hotspot detection            (entropy > 75th percentile)
+  7. Fibril core score            (mean |DeltaLogP|, conserved positions)
+  8. UMAP/PCA embedding           (structural clustering of windows)
   9. Summary report               (JSON + CSV)
 
 Usage:
     python mutation_heatmap_extended.py \\
-        --model    teachers/teacher_α-synuclein/best_teacher.pt \\
+        --model    teachers/teacher_alpha-synuclein/best_teacher.pt \\
         --data     windows_all_local.npz \\
         --protein_metadata proteins_metadata_with_class.json \\
         --rotamer_csv rotamer_localmax_maxdens.csv \\
         --fasta    fasta1.fasta \\
         --window_seq VGGAV \\
         --output   results/asynuclein_VGGAV
-        python mutation_heatmap_extended_old.py        --model teachers/teacher_/best_teacher.pt        --protein_name "α-synuclein"       --data     windows_all_local.npz         --protein_metadata proteins_metadata_with_class.json         --rotamer_csv rotamer_localmax_maxdens.csv         --fasta  ./fasta_file/aS_7v49.fasta         --window_seq VGGAV         --output   resultsalpha_syn_VVGAV --sequence_scan --start_residue 38  --end_residue 95
+        python mutation_heatmap_extended_old.py        --model teachers/teacher_/best_teacher.pt        --protein_name "alpha-synuclein"       --data     windows_all_local.npz         --protein_metadata proteins_metadata_with_class.json         --rotamer_csv rotamer_localmax_maxdens.csv         --fasta  ./fasta_file/aS_7v49.fasta         --window_seq VGGAV         --output   resultsalpha_syn_VVGAV --sequence_scan --start_residue 38  --end_residue 95
         
         python mutation_heatmap_extended_old.py \
     --model    teachers/teacher_Transthyretin/best_teacher.pt \
@@ -37,15 +37,15 @@ Usage:
     --sequence_scan
 
 
-    Tutti gli output vengono salvati nella cartella --output:
-        heatmap_prob.png          ← heatmap probabilità (originale)
-        heatmap_delta_logp.png    ← landscape ΔlogP
-        entropy_profile.png       ← entropy per finestra
-        core_score.png            ← fibril core score
-        breaker_map.png           ← mappa breaker mutations
-        embedding_umap.png        ← clustering strutturale (se sklearn/umap)
-        analysis_report.json      ← summary numerico completo
-        analysis_report.csv       ← tabella per posizione
+    All outputs are saved to the --output folder:
+        heatmap_prob.png          <- probability heatmap (original)
+        heatmap_delta_logp.png    <- DeltaLogP landscape
+        entropy_profile.png       <- entropy per window
+        core_score.png            <- fibril core score
+        breaker_map.png           <- breaker mutations map
+        embedding_umap.png        <- structural clustering (if sklearn/umap available)
+        analysis_report.json      <- full numeric summary
+        analysis_report.csv       <- per-position table
 
         set -euo pipefail
  
@@ -54,7 +54,7 @@ DATA=windows_all_local.npz
 META=proteins_metadata_with_class.json
 ROTAMER=rotamer_localmax_maxdens.csv
  
-# formato: nome_proteina|fasta|window_seq_iniziale
+# format: protein_name|fasta|initial_window_seq
 declare -a PROTEINS=(
   "Antimicrobial peptide|./fasta_file/Antimicrobial peptide_7QV5.fasta|DLIRK"
   "CPEB3|./fasta_file/CPEB3_8SPA.fasta|LSPSF"
@@ -63,7 +63,7 @@ declare -a PROTEINS=(
   "Mrip3|./fasta_file/Mrip3_6JPD.fasta|VFNNC"
   "Nup98|./fasta_file/Nup98_7Q64.fasta|TGTAN"
   "RIPK1|./fasta_file/RIPK1_8IB0.fasta|TIYNS"
-  "β-endorphin|./fasta_file/β-endorphin_6TUB.fasta|YGGFM"
+  "beta-endorphin|./fasta_file/beta-endorphin_6TUB.fasta|YGGFM"
 )
  
 for entry in "${PROTEINS[@]}"; do
@@ -107,14 +107,14 @@ declare -a WINS=(
 
 for entry in "${WINS[@]}"; do
   IFS='|' read -r LABEL WIN <<< "$entry"
-  echo "=== $NAME — $LABEL ($WIN) ==="
+  echo "=== $NAME - $LABEL ($WIN) ==="
   python "$SCRIPT" \
     --model "$MODEL" \
     --data "$DATA" \
     --protein_metadata "$META" \
     --rotamer_csv "$ROTAMER" \
     --fasta "$FASTA" \
-    --protein_name "$NAME — $LABEL" \
+    --protein_name "$NAME - $LABEL" \
     --window_seq "$WIN" \
     --output "results/hotspots_${SAFE_NAME}/${LABEL}_${WIN}" \
     --residue_offset "$OFFSET"
@@ -133,14 +133,14 @@ declare -a WINS=(
 
 for entry in "${WINS[@]}"; do
   IFS='|' read -r LABEL WIN <<< "$entry"
-  echo "=== $NAME — $LABEL ($WIN) ==="
+  echo "=== $NAME - $LABEL ($WIN) ==="
   python "$SCRIPT" \
     --model "$MODEL" \
     --data "$DATA" \
     --protein_metadata "$META" \
     --rotamer_csv "$ROTAMER" \
     --fasta "$FASTA" \
-    --protein_name "$NAME — $LABEL" \
+    --protein_name "$NAME - $LABEL" \
     --window_seq "$WIN" \
     --output "results/hotspots_${SAFE_NAME}/${LABEL}_${WIN}" \
     --residue_offset "$OFFSET"
@@ -168,15 +168,15 @@ from matplotlib.lines import Line2D
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
 
-# topk_model2.py vive in ../model (usato più sotto in load_model())
+# topk_model2.py lives in ../model (used below in load_model())
 sys.path.append(str(Path(__file__).resolve().parent.parent / "model"))
 
 
-# ── Helper: salvataggio multi-formato ────────────────────────────────────────
+# -- Helper: multi-format saving -------------------------------------------
 def _save_multiformat(fig, output_path: str, label: str = ""):
     """
-    Salva la figura in PNG (600 dpi), SVG, PDF e TIFF (600 dpi, LZW)
-    dentro una sottocartella 'figures/' nella stessa directory di output_path.
+    Saves the figure as PNG (600 dpi), SVG, PDF and TIFF (600 dpi, LZW)
+    inside a 'figures/' subfolder next to output_path.
     """
     src  = Path(output_path)
     dest = src.parent / 'figures' / src.stem
@@ -187,29 +187,29 @@ def _save_multiformat(fig, output_path: str, label: str = ""):
     fig.savefig(str(dest) + '.tiff', format='tiff', dpi=600,
                 bbox_inches='tight', pil_kwargs={"compression": "tiff_lzw"})
     tag = f"  [{label}]" if label else ""
-    print(f"✓{tag} Salvata: {dest}  (.png / .svg / .pdf / .tiff)")
+    print(f"[OK]{tag} Saved: {dest}  (.png / .svg / .pdf / .tiff)")
 
-# ── Costanti AA ─────────────────────────────────────────────────────────────
+# -- AA constants -------------------------------------------------------------
 AA_ORDER   = "ACDEFGHIKLMNPQRSTVWY"
 AA_TO_IDX  = {aa: i for i, aa in enumerate(AA_ORDER)}
 IDX_TO_AA  = {i: aa for i, aa in enumerate(AA_ORDER)}
 AA_NAMES   = {i: aa for i, aa in enumerate(AA_ORDER)}
 AA_TO_NUM  = {v: k for k, v in AA_NAMES.items()}
 
-# Proprietà biofisiche per annotazioni (stesso ordine AA_ORDER)
+# Biophysical properties for annotations (same order as AA_ORDER)
 AA_PROPERTIES = {
-    # Idrofobicità (Kyte-Doolittle, normalizzata 0-1)
+    # Hydrophobicity (Kyte-Doolittle, normalized 0-1)
     'hydrophobic': ['A','C','F','I','L','M','V','W'],
-    # Polari/carichi
+    # Polar/charged
     'charged_pos': ['K','R','H'],
     'charged_neg': ['D','E'],
     'polar':       ['N','Q','S','T','Y'],
-    # Speciali
+    # Special
     'proline':     ['P'],
     'glycine':     ['G'],
 }
 
-# Colori per proprietà (usati nelle annotazioni)
+# Colors per property (used in annotations)
 AA_PROP_COLOR = {}
 for aa in AA_ORDER:
     if aa in AA_PROPERTIES['hydrophobic']:  AA_PROP_COLOR[aa] = '#1A3A64'
@@ -221,11 +221,12 @@ for aa in AA_ORDER:
     else:                                    AA_PROP_COLOR[aa] = '#333333'
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# BLOCCO 1 — Funzioni originali (invariate al 100%)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# BLOCK 1 - Original functions (100% unchanged)
+# ============================================================================
 
 def read_fasta(fasta_path):
+    """Reads a FASTA file and returns its single concatenated sequence string."""
     seq = ''
     with open(fasta_path) as f:
         for line in f:
@@ -235,12 +236,12 @@ def read_fasta(fasta_path):
 
 
 def _extract_pdb_id_from_fasta(fasta_path):
-    """Estrae il PDB id dall'header RCSB tipo '>2RNM_1|Chains...' -> '2RNM'."""
+    """Extracts the PDB id from an RCSB-style header like '>2RNM_1|Chains...' -> '2RNM'."""
     try:
         with open(fasta_path) as f:
             for line in f:
                 if line.startswith('>'):
-                    token = line[1:].strip().split('|')[0]   # es. '2RNM_1'
+                    token = line[1:].strip().split('|')[0]   # e.g. '2RNM_1'
                     pdb = token.split('_')[0].strip()
                     return pdb.upper() if pdb else None
     except Exception:
@@ -250,16 +251,16 @@ def _extract_pdb_id_from_fasta(fasta_path):
 
 def _parse_sifts_offset(data, pdb_key):
     """
-    Dalla risposta SIFTS PDBe calcola offset = numero_autore - posizione_SEQRES(=FASTA).
-    Usa il segmento UniProt più lungo. Ritorna int o None.
+    Computes offset = author_number - SEQRES_position(=FASTA) from the SIFTS
+    PDBe API response. Uses the longest UniProt segment. Returns int or None.
     """
     unp_block = data.get(pdb_key, {}).get('UniProt', {})
     best_len, offset = -1, None
     for _acc, acc_data in unp_block.items():
         for seg in acc_data.get('mappings', []):
             start    = seg.get('start', {})
-            res_num  = start.get('residue_number')          # 1-based nel SEQRES = pos FASTA
-            auth_num = start.get('author_residue_number')   # numerazione depositata (canonica)
+            res_num  = start.get('residue_number')          # 1-based in SEQRES = FASTA pos
+            auth_num = start.get('author_residue_number')   # deposited (canonical) numbering
             if res_num is None or auth_num is None:
                 continue
             seg_len = seg.get('unp_end', 0) - seg.get('unp_start', 0)
@@ -271,10 +272,10 @@ def _parse_sifts_offset(data, pdb_key):
 
 def auto_residue_offset(pdb_id, timeout=20, _cache={}):
     """
-    Determina in automatico l'offset (residuo_canonico - posizione_FASTA_1based)
-    dalla mappatura SIFTS di PDBe, usando il NUMERO D'AUTORE del residuo, cioè la
-    numerazione depositata nel PDB (HET-s 218-289, RIPK3 409-486, beta-endorfina 1-31).
-    Richiede connessione a ebi.ac.uk. Ritorna int oppure None se non determinabile.
+    Automatically determines the offset (canonical_residue - 1-based_FASTA_position)
+    from the PDBe SIFTS mapping, using the AUTHOR residue number, i.e. the
+    numbering deposited in the PDB (HET-s 218-289, RIPK3 409-486, beta-endorphin 1-31).
+    Requires a connection to ebi.ac.uk. Returns int, or None if it cannot be determined.
     """
     if not pdb_id:
         return None
@@ -291,23 +292,38 @@ def auto_residue_offset(pdb_id, timeout=20, _cache={}):
             data = _json.load(resp)
         offset = _parse_sifts_offset(data, key)
     except Exception as e:
-        print(f"  ⚠️  auto-offset: SIFTS non raggiungibile per {key} ({e}).")
+        print(f"  [WARN] auto-offset: SIFTS not reachable for {key} ({e}).")
         offset = None
     _cache[key] = offset
     return offset
 
 
 def load_model(model_path, device):
+    """
+    Loads a ProteinMLM_v2 checkpoint and rebuilds the model with the
+    architecture stored in its 'model_config' metadata.
+
+    Args:
+        model_path: Path to the .pt checkpoint file (must contain a
+            'model_config' dict and a 'model_state_dict').
+        device: Torch device to load the model onto.
+
+    Returns:
+        ProteinMLM_v2: The loaded model, in eval() mode.
+
+    Raises:
+        KeyError: If the checkpoint has no 'model_config' entry.
+    """
     from topk_model2 import ProteinMLM_v2
 
-    print(f"\nCaricamento checkpoint: {model_path}")
+    print(f"\nLoading checkpoint: {model_path}")
     ckpt = torch.load(model_path, map_location=device, weights_only=False)
 
     if 'model_config' in ckpt:
         cfg       = ckpt['model_config']
         state_key = 'model_state_dict'
     else:
-        raise KeyError("Il checkpoint non contiene 'model_config'.")
+        raise KeyError("The checkpoint does not contain 'model_config'.")
 
     n_aa            = cfg.get('n_aa', 20)
     aa_to_n_clusters = cfg.get('aa_to_n_clusters', {i: 1 for i in range(20)})
@@ -332,25 +348,42 @@ def load_model(model_path, device):
 
     model.load_state_dict(ckpt[state_key])
     model.eval()
-    print("✓ Modello caricato")
+    print("[OK] Model loaded")
     return model
 
 
 def _normalize_pdb_id(pdb_id: str) -> str:
     """
-    Riduce un pdb_id al codice PDB canonico a 4 caratteri (case-insensitive).
-    Esempi:
-        '8BFA_filtered_new_r5c23d4.836a0.648'     → '8bfa'
-        '8bfa_filtered_new_r5c23d4.836a0.648_new' → '8bfa'
-        '2MPZ_filtered_new_r5c23d4.8a0.0'         → '2mpz'
+    Reduces a pdb_id to the canonical 4-character PDB code (case-insensitive).
+    Examples:
+        '8BFA_filtered_new_r5c23d4.836a0.648'     -> '8bfa'
+        '8bfa_filtered_new_r5c23d4.836a0.648_new' -> '8bfa'
+        '2MPZ_filtered_new_r5c23d4.8a0.0'         -> '2mpz'
     """
     return pdb_id.split('_')[0].lower()
 
 
 def load_dataset(npz_path, protein_metadata_path, target_protein):
-    print(f"\nCaricamento dataset: {npz_path}")
+    """
+    Loads the windows dataset and filters it down to the windows
+    belonging to `target_protein`, deduplicating any PDB structure that
+    appears twice under a different naming convention.
+
+    Args:
+        npz_path: Path to the windows .npz dataset.
+        protein_metadata_path: Path to the JSON metadata file mapping
+            each window index to its pdb_id/protein_class.
+        target_protein: The protein_class name to filter windows by.
+
+    Returns:
+        tuple (data, dedup_indices):
+            data: The loaded .npz archive (NpzFile).
+            dedup_indices: Sorted list of window indices belonging to
+                `target_protein`, after removing duplicate-PDB windows.
+    """
+    print(f"\nLoading dataset: {npz_path}")
     data = np.load(npz_path, allow_pickle=True)
-    print(f"  Chiavi NPZ: {list(data.keys())}")
+    print(f"  NPZ keys: {list(data.keys())}")
 
     with open(protein_metadata_path) as f:
         protein_metadata = json.load(f)
@@ -369,29 +402,29 @@ def load_dataset(npz_path, protein_metadata_path, target_protein):
         int(idx) for idx, val in protein_metadata.items()
         if get_protein_name(val) == target_protein
     ]
-    print(f"  Finestre totali nel dataset: {data['aa_ids'].shape[0]}")
-    print(f"  Finestre di '{target_protein}' (pre-dedup): {len(all_indices)}")
+    print(f"  Total windows in dataset: {data['aa_ids'].shape[0]}")
+    print(f"  Windows for '{target_protein}' (pre-dedup): {len(all_indices)}")
 
-    # ── Deduplicazione PDB ────────────────────────────────────────────────
-    # Alcuni PDB compaiono due volte con naming diverso (es. '8BFA_filtered...'
-    # e '8bfa_filtered..._new'). Per ogni codice PDB canonico (4 char, lowercase)
-    # manteniamo TUTTE le finestre della prima versione incontrata e scartiamo
-    # TUTTE le finestre delle versioni duplicate.
+    # -- PDB deduplication ---------------------------------------------------
+    # Some PDBs appear twice under different naming (e.g. '8BFA_filtered...'
+    # and '8bfa_filtered..._new'). For each canonical PDB code (4 char,
+    # lowercase) we keep ALL windows from the first version encountered and
+    # discard ALL windows from the duplicate versions.
     #
-    # Strategia:
-    #   1. Raggruppa gli indici per pdb_id completo  →  {pdb_id: [idx, ...]}
-    #   2. Per ogni codice 4-char unico, scegli la versione con l'indice più basso
-    #      (convenzione riproducibile e deterministica).
-    #   3. Includi solo gli indici di quella versione.
+    # Strategy:
+    #   1. Group indices by full pdb_id  ->  {pdb_id: [idx, ...]}
+    #   2. For each unique 4-char code, pick the version with the lowest
+    #      index (reproducible, deterministic convention).
+    #   3. Include only the indices of that version.
 
-    # Passo 1: raggruppa per pdb_id completo
+    # Step 1: group by full pdb_id
     pdb_id_to_indices: dict[str, list[int]] = {}
     for idx in all_indices:
         raw_pdb = get_pdb_id(protein_metadata.get(str(idx), {}))
         pdb_id_to_indices.setdefault(raw_pdb, []).append(idx)
 
-    # Passo 2: per ogni codice canonico, scegli il pdb_id con l'indice minimo
-    code_to_chosen_pdb: dict[str, str] = {}   # codice_4char → pdb_id scelto
+    # Step 2: for each canonical code, choose the pdb_id with the lowest index
+    code_to_chosen_pdb: dict[str, str] = {}   # 4-char code -> chosen pdb_id
     for raw_pdb in pdb_id_to_indices:
         code = _normalize_pdb_id(raw_pdb) if raw_pdb else f'__unknown__'
         min_idx = min(pdb_id_to_indices[raw_pdb])
@@ -402,7 +435,7 @@ def load_dataset(npz_path, protein_metadata_path, target_protein):
             if min_idx < current_min:
                 code_to_chosen_pdb[code] = raw_pdb
 
-    # Passo 3: raccogli gli indici delle versioni scelte
+    # Step 3: collect the indices of the chosen versions
     chosen_pdb_ids = set(code_to_chosen_pdb.values())
     dedup_indices  = []
     skipped_versions: list[str] = []
@@ -420,24 +453,42 @@ def load_dataset(npz_path, protein_metadata_path, target_protein):
     dedup_indices.sort()
 
     if skipped_versions:
-        print(f"  ⚠️  Deduplicazione PDB: scartate {len(skipped_versions)} versioni duplicate:")
+        print(f"  [WARN] PDB deduplication: discarded {len(skipped_versions)} duplicate versions:")
         for dup_pdb, n_win, kept_pdb in skipped_versions:
-            print(f"       RIMOSSA  ({n_win:3d} finestre): '{dup_pdb}'")
-            print(f"       MANTENUTA              : '{kept_pdb}'")
+            print(f"       REMOVED  ({n_win:3d} windows): '{dup_pdb}'")
+            print(f"       KEPT                 : '{kept_pdb}'")
     else:
-        print(f"  ✓ Nessun PDB duplicato trovato.")
+        print(f"  [OK] No duplicate PDB found.")
 
-    print(f"  Finestre di '{target_protein}' (post-dedup): {len(dedup_indices)}  "
-          f"({len(code_to_chosen_pdb)} strutture PDB uniche)")
+    print(f"  Windows for '{target_protein}' (post-dedup): {len(dedup_indices)}  "
+          f"({len(code_to_chosen_pdb)} unique PDB structures)")
 
     return data, dedup_indices
 
 
 def window_to_seq(aa_array):
+    """Converts an array of amino acid indices for one window into its 1-letter sequence string."""
     return ''.join(AA_NAMES.get(int(a), '?') for a in aa_array)
 
 
 def find_matching_windows(data, asynuclein_indices, window_seq):
+    """
+    Finds all windows among the given indices whose amino acid sequence
+    exactly matches `window_seq`.
+
+    Args:
+        data: The loaded .npz dataset.
+        asynuclein_indices: List of candidate window indices to search
+            within (despite the name, this works for any protein).
+        window_seq: The 5-letter amino acid sequence to match exactly.
+
+    Returns:
+        tuple (matched_indices, positions_info):
+            matched_indices: List of window indices whose sequence equals
+                `window_seq`.
+            positions_info: List of dicts {'global_idx', 'sequence'} for
+                each match.
+    """
     matched_indices = []
     positions_info  = []
     aa_ids          = data['aa_ids']
@@ -448,12 +499,32 @@ def find_matching_windows(data, asynuclein_indices, window_seq):
             matched_indices.append(idx)
             positions_info.append({'global_idx': idx, 'sequence': seq})
 
-    print(f"\n  Finestre che matchano '{window_seq}': {len(matched_indices)}")
+    print(f"\n  Windows matching '{window_seq}': {len(matched_indices)}")
     return matched_indices, positions_info
 
 
 @torch.no_grad()
 def predict_probs_single(model, data, global_idx, device, mask_token_aa, mask_token_cl):
+    """
+    Runs a forward pass for one window, masking the central residue's
+    amino acid and cluster, and returns the predicted amino acid
+    probability distribution for that position.
+
+    Args:
+        model: The loaded ProteinMLM_v2 model.
+        data: The .npz dataset (must contain aa_ids, cluster_idx, ss,
+            pos_idx, sasa).
+        global_idx: Index of the window in the dataset arrays.
+        device: Torch device to run inference on.
+        mask_token_aa: Integer index used as the MASK token for the
+            amino acid channel.
+        mask_token_cl: Integer index used as the MASK token for the
+            cluster channel.
+
+    Returns:
+        np.ndarray: Softmax probability distribution of shape (20,) over
+        the 20 amino acids for the masked central residue.
+    """
     win_size = data['aa_ids'].shape[1]
     center   = win_size // 2
 
@@ -483,23 +554,58 @@ def predict_probs_single(model, data, global_idx, device, mask_token_aa, mask_to
 
 def compute_probability_matrix(model, data, matched_indices, device,
                                 mask_token_aa=20, mask_token_cl=0):
+    """
+    Computes the amino acid probability distribution for every matched
+    window and stacks them into a single matrix.
+
+    Args:
+        model: The loaded ProteinMLM_v2 model.
+        data: The .npz dataset.
+        matched_indices: List of window indices to run inference on.
+        device: Torch device to run inference on.
+        mask_token_aa: MASK token index for the amino acid channel.
+        mask_token_cl: MASK token index for the cluster channel.
+
+    Returns:
+        np.ndarray: Matrix of shape (20, len(matched_indices)), one
+        probability column per window.
+    """
     all_probs = []
-    print(f"\nCalcolo probabilità per {len(matched_indices)} finestre...")
+    print(f"\nComputing probabilities for {len(matched_indices)} windows...")
 
     for i, idx in enumerate(matched_indices):
         probs = predict_probs_single(model, data, idx, device,
                                      mask_token_aa, mask_token_cl)
         all_probs.append(probs)
         if (i + 1) % 10 == 0 or i == 0:
-            print(f"  [{i+1}/{len(matched_indices)}] idx={idx} ✓")
+            print(f"  [{i+1}/{len(matched_indices)}] idx={idx} [OK]")
 
     matrix = np.column_stack(all_probs)   # (20, N)
-    print(f"  Matrice finale: {matrix.shape[0]} AA × {matrix.shape[1]} finestre")
+    print(f"  Final matrix: {matrix.shape[0]} AA x {matrix.shape[1]} windows")
     return matrix
 
 
 def build_column_labels(matched_indices, data, fasta_seq, window_seq,
                         protein_metadata=None, residue_offset=0):
+    """
+    Builds a display label for each matched window: which residue is
+    masked, its sequence position(s) in the FASTA, and the source PDB
+    id, for use as x-axis tick labels in the plots.
+
+    Args:
+        matched_indices: List of window indices matching `window_seq`.
+        data: The .npz dataset.
+        fasta_seq: Full protein sequence string, or None if unavailable.
+        window_seq: The 5-letter window sequence being labeled.
+        protein_metadata: Optional dict mapping window index (as string)
+            to its metadata (used to show the PDB id).
+        residue_offset: Offset added to the FASTA-derived position to
+            report it in canonical residue numbering.
+
+    Returns:
+        list[str]: One multi-line label per window, e.g.
+        "Poly-1\\nV53\\n8BFA".
+    """
     win_size = data['aa_ids'].shape[1]
     center   = win_size // 2
     aa_ids   = data['aa_ids']
@@ -542,7 +648,7 @@ def build_column_labels(matched_indices, data, fasta_seq, window_seq,
 
 def plot_heatmap(matrix, column_labels, window_seq, output_path=None,
                  figsize=(18, 10), colormap='RdPu', protein_name='Protein'):
-    """Heatmap originale — invariata."""
+    """Original probability heatmap -- unchanged."""
     row_labels = [AA_NAMES[i] for i in range(20)]
 
     bounds = [0, 0.03, 0.06, 0.09, 0.12, 0.15, 0.18, 0.21, 0.25, 0.30, 0.35, 0.45, 0.60]
@@ -587,7 +693,7 @@ def plot_heatmap(matrix, column_labels, window_seq, output_path=None,
     ax.set_xlabel(f'{protein_name} Polymorphs', fontsize=14, fontweight='bold', labelpad=10)
     ax.set_ylabel('Amino acid', fontsize=14, fontweight='bold')
     ax.set_title(
-        f'Mutation Probability — {protein_name}\nWindow: {window_seq}  '
+        f'Mutation Probability - {protein_name}\nWindow: {window_seq}  '
         f'({matrix.shape[1]} occurrences in dataset)',
         fontsize=14, fontweight='bold', pad=20
     )
@@ -604,43 +710,45 @@ def plot_heatmap(matrix, column_labels, window_seq, output_path=None,
 
 
 def print_summary(matrix, column_labels):
+    """Prints the top-5 amino acids by average predicted probability and basic matrix stats."""
     mean_probs = matrix.mean(axis=1)
     top5_idx   = np.argsort(mean_probs)[::-1][:5]
-    print("\n── Riepilogo probabilità medie (residuo centrale mascherato) ──")
-    print(f"{'AA':<6} {'Prob media':>12}")
+    print("\n-- Summary of average probabilities (masked central residue) --")
+    print(f"{'AA':<6} {'Mean prob':>12}")
     print("-" * 20)
     for idx in top5_idx:
         print(f"  {AA_NAMES[idx]:<4}  {mean_probs[idx]:.4f}")
-    print(f"\nStatistiche matrice:")
+    print(f"\nMatrix statistics:")
     print(f"  Min:  {matrix.min():.4f}  Max: {matrix.max():.4f}  "
           f"Mean: {matrix.mean():.4f}")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# BLOCCO 2 — Nuove analisi
-# ═══════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# BLOCK 2 - New analyses
+# ============================================================================
 
 def compute_delta_logp(prob_matrix, wt_sequence):
     """
-    Calcola la matrice ΔlogP per ogni finestra.
+    Computes the DeltaLogP matrix for every window.
 
-    ΔlogP(i, a) = log P(a | context_i) - log P(WT_i | context_i)
+    DeltaLogP(i, a) = log P(a | context_i) - log P(WT_i | context_i)
 
     Args:
         prob_matrix  : np.array (20, N_windows)
-        wt_sequence  : stringa della finestra, es. "VGGAV"
-                       Usiamo il residuo CENTRALE come WT per ogni finestra
-                       (tutte le finestre hanno la stessa sequenza centrale)
+        wt_sequence  : window sequence string, e.g. "VGGAV"
+                       The CENTRAL residue is used as the WT for every
+                       window (all windows share the same central
+                       sequence).
     
     Returns:
         delta_logp  : np.array (20, N_windows)
-        wt_idx      : int — indice dell'AA centrale WT
+        wt_idx      : int -- index of the WT central amino acid
     """
     center     = len(wt_sequence) // 2
     wt_aa      = wt_sequence[center]
     wt_idx     = AA_TO_IDX[wt_aa]
 
-    # log P(mut) - log P(WT) per ogni colonna (finestra)
+    # log P(mut) - log P(WT) for each column (window)
     log_probs  = np.log(prob_matrix + 1e-9)          # (20, N)
     wt_log     = log_probs[wt_idx, :]                # (N,)
     delta_logp = log_probs - wt_log[np.newaxis, :]   # (20, N)
@@ -650,10 +758,10 @@ def compute_delta_logp(prob_matrix, wt_sequence):
 
 def compute_entropy_profile(prob_matrix):
     """
-    H(i) = -Σ_a P(a|i) log P(a|i)
+    H(i) = -sum_a P(a|i) log P(a|i)
     
     Returns:
-        entropy : np.array (N_windows,) — una entropia per finestra
+        entropy : np.array (N_windows,) -- one entropy value per window
     """
     entropy = -(prob_matrix * np.log(prob_matrix + 1e-9)).sum(axis=0)  # (N,)
     return entropy
@@ -661,27 +769,29 @@ def compute_entropy_profile(prob_matrix):
 
 def find_breakers(delta_logp, threshold=-5.0, percentile=None):
     """
-    Residui con ΔlogP < threshold → sono breaker della fibrilla.
+    Residues with DeltaLogP < threshold are considered fibril breakers.
 
-    Se percentile è fornito (es. 5), la soglia viene calcolata come il
-    percentile più basso della distribuzione ΔlogP, ignorando la diagonale
-    WT (ΔlogP = 0 per definizione). Questo è robusto rispetto alla scala
-    del modello e produce sempre il 5% peggiore delle mutazioni.
+    If `percentile` is provided (e.g. 5), the threshold is computed as
+    the lowest percentile of the DeltaLogP distribution, ignoring the WT
+    diagonal (DeltaLogP = 0 by definition). This is robust to the
+    model's score scale and always yields the worst 5% of mutations.
 
     Args:
         delta_logp : np.array (20, N_windows)
-        threshold  : soglia fissa (usata se percentile è None)
-        percentile : se fornito, sovrascrive threshold con il percentile-esimo
-                     valore della distribuzione (default None → usa threshold)
+        threshold  : fixed threshold (used if percentile is None)
+        percentile : if provided, overrides threshold with the
+                     corresponding percentile of the distribution
+                     (default None -> use threshold)
 
     Returns:
         breakers          : list of (window_idx, aa_letter, delta_logp_value)
-                            sorted per delta_logp crescente (peggiori prima)
-        effective_threshold : float — soglia effettivamente usata
+                            sorted by increasing delta_logp (worst first)
+        effective_threshold : float -- the threshold actually used
     """
     if percentile is not None:
-        # Esclude esattamente gli zeri della diagonale WT (ΔlogP WT = 0 per definizione).
-        # NON esclude mutazioni neutrali vicine a zero: quelle sono informative.
+        # Excludes exactly the WT-diagonal zeros (WT DeltaLogP = 0 by
+        # definition). Does NOT exclude near-zero neutral mutations:
+        # those are still informative.
         all_scores = delta_logp.flatten()
         nonzero    = all_scores[all_scores != 0.0]
         effective_threshold = float(np.percentile(nonzero, percentile))
@@ -703,8 +813,9 @@ def find_breakers(delta_logp, threshold=-5.0, percentile=None):
 
 def find_designable_windows(delta_logp, threshold=-1.0, min_tolerated=5):
     """
-    Finestre dove ci sono ≥ min_tolerated mutazioni con ΔlogP > threshold.
-    Posizioni di design → puoi modificare senza destabilizzare la fibrilla.
+    Windows where at least `min_tolerated` mutations have DeltaLogP >
+    threshold. Design positions: you can substitute here without
+    destabilizing the fibril.
     
     Returns:
         list of window indices
@@ -719,8 +830,8 @@ def find_designable_windows(delta_logp, threshold=-1.0, min_tolerated=5):
 
 def compute_core_score(delta_logp):
     """
-    Core score = media di |ΔlogP| su tutte le mutazioni per ogni finestra.
-    Alto core score → posizione molto conservata (fibril core).
+    Core score = mean of |DeltaLogP| across all mutations, per window.
+    High core score -> highly conserved position (fibril core).
     
     Returns:
         core_score : np.array (N_windows,)
@@ -730,43 +841,43 @@ def compute_core_score(delta_logp):
 
 def compute_mutational_tolerance(delta_logp, threshold=-2.0):
     """
-    Numero di mutazioni con ΔlogP > threshold per ogni finestra.
+    Number of mutations with DeltaLogP > threshold, per window.
     
     Returns:
-        tolerance : np.array (N_windows,) di int
+        tolerance : np.array (N_windows,) of int
     """
     return (delta_logp > threshold).sum(axis=0)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# BLOCCO 3 — Embedding extraction + UMAP/PCA
-# ═══════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# BLOCK 3 - Embedding extraction + UMAP/PCA
+# ============================================================================
 
 @torch.no_grad()
 def extract_embedding(model, data, global_idx, device, mask_token_aa, mask_token_cl):
     """
-    Estrae l'embedding strutturale VERO dal modello: il vettore h prodotto
-    dall'attenzione BiLSTM, PRIMA della testa di classificazione.
+    Extracts the TRUE structural embedding from the model: the vector h
+    produced by the BiLSTM+attention, BEFORE the classification head.
 
-    Strategia a 3 livelli (dal più informativo al fallback):
+    3-tier strategy (from most to least informative):
 
-    Livello 1 — return_embedding=True (TeacherModel/FibrilBreakerModel):
-        output['h'] → vettore (d_hidden*2,) — il vero embedding strutturale.
-        Questo è il più ricco: include contesto LSTM + attenzione.
+    Tier 1 - return_embedding=True (TeacherModel/FibrilBreakerModel):
+        output['h'] -> vector (d_hidden*2,) -- the real structural embedding.
+        The richest option: includes LSTM context + attention.
 
-    Livello 2 — hook PyTorch sul layer 'dropout' pre-head:
-        Aggancia un forward hook sull'ultimo dropout prima di head_aa.
-        Cattura h_dropped (d_hidden*2,) senza modificare il modello.
-        Funziona su ProteinMLM_v2 standard senza return_embedding.
+    Tier 2 - PyTorch hook on the pre-head 'dropout' layer:
+        Attaches a forward hook on the last dropout before head_aa.
+        Captures h_dropped (d_hidden*2,) without modifying the model.
+        Works on a standard ProteinMLM_v2 without return_embedding.
 
-    Livello 3 — fallback logit-space:
-        Se tutto fallisce, usa softmax(logits) come proxy.
-        Questo NON è un vero embedding strutturale (è solo la distribuzione AA),
-        e viene segnalato con un warning.
+    Tier 3 - logit-space fallback:
+        If everything else fails, uses softmax(logits) as a proxy.
+        This is NOT a true structural embedding (it's just the AA
+        distribution), and a warning is printed.
 
     Returns:
         h_vec        : np.array (D,)
-        is_true_emb  : bool — True se siamo al livello 1 o 2
+        is_true_emb  : bool -- True if tier 1 or tier 2 was used
     """
     win_size = data['aa_ids'].shape[1]
     center   = win_size // 2
@@ -786,7 +897,7 @@ def extract_embedding(model, data, global_idx, device, mask_token_aa, mask_token
         'y_cl': torch.zeros(1, dtype=torch.long).to(device),
     }
 
-    # ── Livello 1: return_embedding API (Teacher / FibrilBreaker) ──────────
+    # -- Tier 1: return_embedding API (Teacher / FibrilBreaker) -------------
     try:
         output = model(batch, return_embedding=True)
         if isinstance(output, dict) and 'h' in output and output['h'] is not None:
@@ -795,11 +906,13 @@ def extract_embedding(model, data, global_idx, device, mask_token_aa, mask_token
     except Exception:
         pass
 
-    # ── Livello 2: forward hook sull'input di head_aa (pre-head) ──────────
-    # Strategia robusta: invece di assumere model.dropout esista (non garantito),
-    # aggancia il hook direttamente sull'INGRESSO del primo Linear di head_aa.
-    # head_aa è sempre presente in ProteinMLM_v2, quindi questo è garantito.
-    # inp[0] all'ingresso del primo Linear è esattamente h_dropped (d_hidden*2,).
+    # -- Tier 2: forward hook on the input of head_aa (pre-head) -----------
+    # Robust strategy: instead of assuming model.dropout exists (not
+    # guaranteed), attach the hook directly to the INPUT of the first
+    # Linear layer of head_aa. head_aa is always present in ProteinMLM_v2,
+    # so this is guaranteed to work.
+    # inp[0] at the input of the first Linear is exactly h_dropped
+    # (d_hidden*2,).
     captured = {}
 
     def _hook(module, inp, out):
@@ -807,17 +920,17 @@ def extract_embedding(model, data, global_idx, device, mask_token_aa, mask_token
 
     hook_handle = None
     try:
-        # Trova il primo layer Linear dentro head_aa — sempre presente in ProteinMLM_v2
-        # In alternativa, se esiste model.dropout lo usiamo (più pulito),
-        # altrimenti usiamo head_aa[0] (il primo Linear).
+        # Find the first Linear layer inside head_aa -- always present in
+        # ProteinMLM_v2. Alternatively, if model.dropout exists we use it
+        # (cleaner), otherwise we use head_aa[0] (the first Linear).
         target_module = None
 
-        # Prima scelta: self.dropout esplicito (ProteinMLM_v2 standard)
+        # First choice: an explicit self.dropout (standard ProteinMLM_v2)
         if hasattr(model, 'dropout') and isinstance(model.dropout, nn.Dropout):
             target_module = model.dropout
-            hook_on_input = True   # vogliamo inp[0] = h prima del dropout
+            hook_on_input = True   # we want inp[0] = h before dropout
 
-        # Seconda scelta: primo Linear di head_aa (sempre presente)
+        # Second choice: first Linear of head_aa (always present)
         if target_module is None:
             for module in model.head_aa.modules():
                 if isinstance(module, nn.Linear):
@@ -844,9 +957,9 @@ def extract_embedding(model, data, global_idx, device, mask_token_aa, mask_token
             except Exception:
                 pass
 
-    # ── Livello 3: fallback logit-space (NON è un vero embedding) ──────────
-    print("  ⚠️  FALLBACK: usando distribuzione AA come proxy embedding "
-          "(non è un vero embedding strutturale — il clustering sarà meno informativo).")
+    # -- Tier 3: logit-space fallback (NOT a true embedding) ----------------
+    print("  [WARN] FALLBACK: using the AA distribution as an embedding proxy "
+          "(this is not a true structural embedding -- clustering will be less informative).")
     output = model(batch)
     if isinstance(output, (tuple, list)):
         logits = output[0]
@@ -861,15 +974,16 @@ def extract_embedding(model, data, global_idx, device, mask_token_aa, mask_token
 def extract_all_embeddings(model, data, matched_indices, device,
                            mask_token_aa=20, mask_token_cl=0):
     """
-    Raccoglie embedding per tutte le finestre.
+    Collects embeddings for every matched window.
 
     Returns:
         embeddings    : np.array (N, D)
-        is_true_emb   : bool — True se tutti gli embedding sono strutturali veri
+        is_true_emb   : bool -- True if every embedding is a true
+            structural embedding
     """
     embeddings    = []
     true_emb_flags = []
-    print(f"\nEstrazione embeddings per {len(matched_indices)} finestre...")
+    print(f"\nExtracting embeddings for {len(matched_indices)} windows...")
 
     for i, idx in enumerate(matched_indices):
         h, is_true = extract_embedding(model, data, idx, device,
@@ -877,17 +991,17 @@ def extract_all_embeddings(model, data, matched_indices, device,
         embeddings.append(h)
         true_emb_flags.append(is_true)
         if (i + 1) % 10 == 0 or i == 0:
-            print(f"  [{i+1}/{len(matched_indices)}] ✓")
+            print(f"  [{i+1}/{len(matched_indices)}] [OK]")
 
     is_true_emb = all(true_emb_flags)
-    quality     = "strutturale (LSTM pre-head)" if is_true_emb else "proxy logit-space"
+    quality     = "structural (LSTM pre-head)" if is_true_emb else "logit-space proxy"
     print(f"  Embedding quality: {quality}")
     return np.array(embeddings), is_true_emb
 
 
 def reduce_embeddings(embeddings, method='pca'):
     """
-    Riduce embedding a 2D con PCA (sempre disponibile) o UMAP (opzionale).
+    Reduces embeddings to 2D via PCA (always available) or UMAP (optional).
     
     Returns:
         coords_2d : np.array (N, 2)
@@ -900,24 +1014,25 @@ def reduce_embeddings(embeddings, method='pca'):
             coords_2d   = reducer.fit_transform(embeddings)
             return coords_2d, 'UMAP'
         except ImportError:
-            print("  ⚠️  umap-learn non installato, uso PCA.")
+            print("  [WARN] umap-learn not installed, falling back to PCA.")
 
     from sklearn.decomposition import PCA
     pca       = PCA(n_components=2, random_state=42)
     coords_2d = pca.fit_transform(embeddings)
-    return coords_2d, f'PCA (var. spiegata: {pca.explained_variance_ratio_.sum():.1%})'
+    return coords_2d, f'PCA (explained var.: {pca.explained_variance_ratio_.sum():.1%})'
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# BLOCCO 6 — Sequence scan: aggregation mutability landscape
-# ═══════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# BLOCK 6 - Sequence scan: aggregation mutability landscape
+# ============================================================================
 
 @torch.no_grad()
 def predict_probs_from_window_data(model, data, global_idx, device,
                                    mask_token_aa, mask_token_cl):
     """
-    Identica a predict_probs_single — restituisce probs (20,) per una finestra.
-    Resa separata per chiarezza nella sequence_scan pipeline.
+    Identical to predict_probs_single -- returns probs (20,) for one
+    window. Kept as a separate function for clarity within the
+    sequence_scan pipeline.
     """
     return predict_probs_single(model, data, global_idx, device,
                                 mask_token_aa, mask_token_cl)
@@ -927,92 +1042,96 @@ def sequence_scan(model, data, all_protein_indices, fasta_seq, device,
                   mask_token_aa=20, mask_token_cl=0, start_residue=1, end_residue=None,
                   residue_offset=0):
     """
-    Scansiona TUTTE le posizioni della proteina mascherando ogni finestra.
+    Scans EVERY position of the protein by masking each corresponding
+    window.
 
-    Per ogni posizione nella sequenza FASTA:
-      - trova le finestre del dataset che hanno il residuo centrale in quella posizione
-      - calcola la probabilità media su tutte le strutture disponibili
-      - calcola ΔlogP, entropy, core_score per quella posizione
+    For every position in the FASTA sequence:
+      - find the dataset windows whose central residue falls at that position
+      - compute the average probability across all available structures
+      - compute DeltaLogP, entropy, core_score for that position
 
-    Questo produce l'aggregation mutability landscape lungo tutta la sequenza:
-    non più per un singolo frammento (VGGAV), ma per ogni residuo della proteina.
+    This produces the aggregation mutability landscape across the whole
+    sequence: no longer for a single fragment (VGGAV), but for every
+    residue of the protein.
 
     Args:
-        model               : ProteinMLM_v2 loaded
+        model               : loaded ProteinMLM_v2
         data                : NPZ dataset dict
-        all_protein_indices : lista di tutti gli indici del dataset per questa proteina
-        fasta_seq           : stringa sequenza completa (es. α-syn, 140 aa)
+        all_protein_indices : list of every dataset index for this protein
+        fasta_seq           : full sequence string (e.g. alpha-syn, 140 aa)
         device              : torch.device
 
     Returns:
-        scan_results : dict con chiavi:
-            'positions'    : list[int] — posizioni 1-based con almeno 1 finestra
-            'wt_aas'       : list[str] — AA WT per ogni posizione
-            'mean_probs'   : np.array (L_covered, 20) — prob media
-            'delta_logp'   : np.array (L_covered, 20) — ΔlogP per posizione
+        scan_results : dict with keys:
+            'positions'    : list[int] -- 1-based positions with at least 1 window
+            'wt_aas'       : list[str] -- WT AA at each position
+            'mean_probs'   : np.array (L_covered, 20) -- mean probability
+            'delta_logp'   : np.array (L_covered, 20) -- DeltaLogP per position
             'entropy'      : np.array (L_covered,)
             'core_score'   : np.array (L_covered,)
-            'tolerance'    : np.array (L_covered,) — n mutazioni tollerate
-            'n_structures' : list[int] — n strutture per posizione
+            'tolerance'    : np.array (L_covered,) -- n tolerated mutations
+            'n_structures' : list[int] -- n structures per position
     """
     aa_ids   = data['aa_ids']
     win_size = aa_ids.shape[1]
     center   = win_size // 2
 
-    # Mappa: posizione FASTA 0-based → lista di global_idx nel dataset
-    # FIX: trova TUTTE le occorrenze della finestra nella FASTA, non solo la prima.
-    # α-syn contiene ripetizioni di sequenza → una finestra può mappare su più posizioni.
+    # Map: 0-based FASTA position -> list of global_idx in the dataset
+    # FIX: find ALL occurrences of the window in the FASTA, not just the
+    # first one. alpha-syn contains sequence repeats -> a window can map
+    # to multiple positions.
     pos_to_indices = defaultdict(list)
 
     for idx in all_protein_indices:
         win_seq = window_to_seq(aa_ids[idx])
-        # Itera su tutte le occorrenze nella FASTA
+        # Iterate over every occurrence in the FASTA
         start = 0
         while True:
             fasta_pos = fasta_seq.find(win_seq, start)
             if fasta_pos == -1:
                 break
-            center_pos = fasta_pos + center  # posizione 0-based del residuo centrale
+            center_pos = fasta_pos + center  # 0-based position of the central residue
             pos_to_indices[center_pos].append(idx)
-            start = fasta_pos + 1  # avanza di 1 per trovare occorrenze sovrapposte
+            start = fasta_pos + 1  # advance by 1 to find overlapping occurrences
 
     if not pos_to_indices:
-        print("  ⚠️  Sequence scan: nessuna finestra mappata sulla FASTA.")
+        print("  [WARN] Sequence scan: no window mapped onto the FASTA.")
         return None
 
-    # Filtra posizioni prima di start_residue (in numerazione canonica)
+    # Filter positions before start_residue (in canonical numbering)
     if start_residue > 1:
         min_pos_0based = start_residue - 1 - residue_offset
         filtered_keys = [p for p in pos_to_indices if p >= min_pos_0based]
         n_removed = len(pos_to_indices) - len(filtered_keys)
         if n_removed > 0:
-            print(f"  [start_residue={start_residue}] Escluse {n_removed} posizioni "
-                  f"prima del residuo {start_residue}.")
+            print(f"  [start_residue={start_residue}] Excluded {n_removed} positions "
+                  f"before residue {start_residue}.")
         pos_to_indices = {k: pos_to_indices[k] for k in filtered_keys}
 
-    # Filtra posizioni dopo end_residue (in numerazione canonica)
+    # Filter positions after end_residue (in canonical numbering)
     if end_residue is not None:
         max_pos_0based = end_residue - 1 - residue_offset
         filtered_keys = [p for p in pos_to_indices if p <= max_pos_0based]
         n_removed = len(pos_to_indices) - len(filtered_keys)
         if n_removed > 0:
-            print(f"  [end_residue={end_residue}] Escluse {n_removed} posizioni "
-                  f"dopo il residuo {end_residue}.")
+            print(f"  [end_residue={end_residue}] Excluded {n_removed} positions "
+                  f"after residue {end_residue}.")
         pos_to_indices = {k: pos_to_indices[k] for k in filtered_keys}
 
     sorted_positions = sorted(pos_to_indices.keys())
-    print(f"\n[SEQUENCE SCAN] Posizioni coperte: {len(sorted_positions)} / {len(fasta_seq)}")
-    print(f"  Finestre totali da processare: "
+    print(f"\n[SEQUENCE SCAN] Positions covered: {len(sorted_positions)} / {len(fasta_seq)}")
+    print(f"  Total windows to process: "
           f"{sum(len(v) for v in pos_to_indices.values())}")
 
-    # ── Pre-calcola probs per TUTTI gli indici unici in un unico passaggio ──
-    # Invece di chiamare predict_probs per ogni (posizione, struttura) separatamente,
-    # calcoliamo una volta sola tutte le probabilità per tutti gli indici unici.
-    # Questo riduce il numero di forward pass da O(N_windows) a O(N_unique_indices).
+    # -- Pre-compute probs for ALL unique indices in a single pass ----------
+    # Instead of calling predict_probs for each (position, structure) pair
+    # separately, we compute all probabilities for every unique index just
+    # once. This reduces the number of forward passes from
+    # O(N_windows) to O(N_unique_indices).
     all_unique_indices = sorted(set(
         idx for indices in pos_to_indices.values() for idx in indices
     ))
-    print(f"  Indici unici (forward passes): {len(all_unique_indices)}")
+    print(f"  Unique indices (forward passes): {len(all_unique_indices)}")
 
     idx_to_probs = {}
     for i, idx in enumerate(all_unique_indices):
@@ -1020,7 +1139,7 @@ def sequence_scan(model, data, all_protein_indices, fasta_seq, device,
                                            mask_token_aa, mask_token_cl)
         idx_to_probs[idx] = p
         if (i + 1) % 50 == 0 or i == len(all_unique_indices) - 1:
-            print(f"  [{i+1}/{len(all_unique_indices)}] forward passes ✓")
+            print(f"  [{i+1}/{len(all_unique_indices)}] forward passes [OK]")
 
     positions    = []
     wt_aas       = []
@@ -1032,46 +1151,47 @@ def sequence_scan(model, data, all_protein_indices, fasta_seq, device,
         wt_aa   = fasta_seq[pos_0]
 
         if wt_aa not in AA_TO_IDX:
-            continue  # salta residui non standard
+            continue  # skip non-standard residues
 
-        # Media probabilità: usa cache, nessun forward pass extra
+        # Average probability: uses the cache, no extra forward pass
         probs_list = [idx_to_probs[idx] for idx in indices if idx in idx_to_probs]
         if not probs_list:
             continue
 
         mean_p = np.mean(probs_list, axis=0)  # (20,)
 
-        positions.append(pos_0 + 1 + residue_offset)  # numerazione canonica
+        positions.append(pos_0 + 1 + residue_offset)  # canonical numbering
         wt_aas.append(wt_aa)
         mean_probs.append(mean_p)
         n_structures.append(len(probs_list))
 
     mean_probs_arr = np.array(mean_probs)   # (L, 20)
 
-    # ΔlogP per ogni posizione (WT specifico di quella posizione)
+    # DeltaLogP per position (WT specific to that position)
     log_probs = np.log(mean_probs_arr + 1e-9)   # (L, 20)
     delta_logp_scan = np.zeros_like(log_probs)
     for i, wt_aa in enumerate(wt_aas):
         wt_idx_i = AA_TO_IDX[wt_aa]
         delta_logp_scan[i] = log_probs[i] - log_probs[i, wt_idx_i]
 
-    # Metriche
+    # Metrics
     entropy_scan    = -(mean_probs_arr * np.log(mean_probs_arr + 1e-9)).sum(axis=1)
     core_score_scan = np.abs(delta_logp_scan).mean(axis=1)
     tolerance_scan  = (delta_logp_scan > -2.0).sum(axis=1)
 
-    # ── Media CON segno (non valore assoluto) ────────────────────────────
-    # Distingue due fenomeni che core_score (valore assoluto) confonde:
-    #   mean_signed < 0  → il WT è (quasi) ottimale, le mutazioni sono
-    #                      penalizzate → vero hotspot/breaker conservato
-    #   mean_signed >= 0 → il WT stesso appare sub-ottimale secondo il
-    #                      modello, quasi ogni sostituzione lo migliora →
-    #                      posizione "tollerante", non un hotspot di
-    #                      aggregazione nel senso classico
+    # -- SIGNED average (not absolute value) --------------------------------
+    # Distinguishes two phenomena that core_score (absolute value)
+    # conflates:
+    #   mean_signed < 0  -> the WT is (near) optimal, mutations are
+    #                      penalized -> a true conserved hotspot/breaker
+    #   mean_signed >= 0 -> the WT itself looks sub-optimal according to
+    #                      the model, almost every substitution improves
+    #                      it -> a "tolerant" position, not an aggregation
+    #                      hotspot in the classic sense
     mean_signed_scan = delta_logp_scan.mean(axis=1)
 
-    print(f"  Posizioni con dati: {len(positions)}")
-    print(f"  Strutture per posizione: min={min(n_structures)}, "
+    print(f"  Positions with data: {len(positions)}")
+    print(f"  Structures per position: min={min(n_structures)}, "
           f"max={max(n_structures)}, mean={np.mean(n_structures):.1f}")
 
     return {
@@ -1090,49 +1210,49 @@ def sequence_scan(model, data, all_protein_indices, fasta_seq, device,
 def find_sensitivity_threshold(values, n_bins=50, smooth_sigma=1.5,
                                zero_fraction=0.05, fallback_percentile=75):
     """
-    Trova la soglia per la Hotspot Index come il punto in cui la
-    densità della distribuzione scende per la prima volta vicino a zero
-    dopo il picco dominante.
+    Finds the threshold for the Hotspot Index as the point where the
+    distribution's density first drops close to zero after the dominant
+    peak.
 
-    Motivazione biologica: la distribuzione ha un unico grande picco
-    (posizioni flessibili/tolleranti) seguito da una coda che si azzera
-    intorno a un certo valore. Le posizioni a destra di quel punto sono
-    le posizioni rigide/sensibili (outlier della coda).
+    Biological motivation: the distribution has a single large peak
+    (flexible/tolerant positions) followed by a tail that flattens out
+    around a certain value. Positions to the right of that point are the
+    rigid/sensitive positions (the tail's outliers).
 
-    Algoritmo:
-      1. Stima la densità con istogramma + smoothing gaussiano
-      2. Trova il picco dominante (densità massima)
-      3. Dopo il picco dominante, scorre a destra fino al primo bin in cui
+    Algorithm:
+      1. Estimate the density with a histogram + Gaussian smoothing
+      2. Find the dominant peak (maximum density)
+      3. After the dominant peak, scan right until the first bin where
          smoothed_density < zero_fraction * peak_density
-         (default: 5% della densità del picco = "quasi zero")
-      4. Quel bin è il threshold
+         (default: 5% of the peak density = "near zero")
+      4. That bin is the threshold
 
     Args:
-        values            : array 1D dei valori di hotspot index
-        n_bins            : numero di bin dell'istogramma (default 50)
-        smooth_sigma      : sigma del filtro gaussiano (default 1.5)
-        zero_fraction     : frazione della densità del picco considerata "zero"
+        values            : 1D array of hotspot index values
+        n_bins            : number of histogram bins (default 50)
+        smooth_sigma      : sigma of the Gaussian filter (default 1.5)
+        zero_fraction     : fraction of the peak density considered "zero"
                             (default 0.05 = 5%)
-        fallback_percentile: percentile usato se l'algoritmo non converge
+        fallback_percentile: percentile used if the algorithm does not converge
 
     Returns:
-        threshold : float — soglia ottimale
-        info      : dict con chiavi:
-                      'method'           : 'density_near_zero' o 'percentile_fallback'
-                      'peaks'            : [x del picco dominante]
-                      'valley'           : threshold trovato (float o None)
-                      'zero_level'       : densità considerata "zero" (5% del picco)
-                      'bin_centers'      : array x dell'istogramma
-                      'smoothed_density' : array densità smoothed
+        threshold : float -- the optimal threshold
+        info      : dict with keys:
+                      'method'           : 'density_near_zero' or 'percentile_fallback'
+                      'peaks'            : [x of the dominant peak]
+                      'valley'           : threshold found (float or None)
+                      'zero_level'       : density considered "zero" (5% of the peak)
+                      'bin_centers'      : histogram x array
+                      'smoothed_density' : smoothed density array
     """
     values = np.asarray(values, dtype=float)
 
-    # ── 1. Istogramma + smooth ─────────────────────────────────────────────
+    # -- 1. Histogram + smoothing ---------------------------------------------
     counts, bin_edges = np.histogram(values, bins=n_bins, density=True)
     bin_centers       = 0.5 * (bin_edges[:-1] + bin_edges[1:])
     smoothed          = gaussian_filter1d(counts, sigma=smooth_sigma)
 
-    # ── 2. Picco dominante ────────────────────────────────────────────────
+    # -- 2. Dominant peak -----------------------------------------------------
     peak_idxs, _ = find_peaks(smoothed)
 
     info_base = {
@@ -1142,7 +1262,7 @@ def find_sensitivity_threshold(values, n_bins=50, smooth_sigma=1.5,
 
     if len(peak_idxs) == 0:
         thr = float(np.percentile(values, fallback_percentile))
-        print(f"  ⚠️  Nessun picco trovato. Fallback: p{fallback_percentile} = {thr:.4f}")
+        print(f"  [WARN] No peak found. Fallback: p{fallback_percentile} = {thr:.4f}")
         return thr, {**info_base, 'method': f'percentile_fallback_p{fallback_percentile}',
                      'peaks': [], 'valley': None, 'zero_level': None}
 
@@ -1150,14 +1270,14 @@ def find_sensitivity_threshold(values, n_bins=50, smooth_sigma=1.5,
     peak_density      = float(smoothed[dominant_idx])
     zero_level        = zero_fraction * peak_density
 
-    # ── 3. Prima discesa sotto zero_level dopo il picco dominante ─────────
+    # -- 3. First drop below zero_level after the dominant peak --------------
     region_after = smoothed[dominant_idx:]
     below_idxs   = np.where(region_after < zero_level)[0]
 
     if len(below_idxs) == 0:
-        # La coda non scende mai sotto la soglia: fallback percentile
+        # The tail never drops below the threshold: fall back to a percentile
         thr = float(np.percentile(values, fallback_percentile))
-        print(f"  ⚠️  La densità non scende mai sotto {zero_fraction*100:.0f}% del picco. "
+        print(f"  [WARN] The density never drops below {zero_fraction*100:.0f}% of the peak. "
               f"Fallback: p{fallback_percentile} = {thr:.4f}")
         return thr, {**info_base, 'method': f'percentile_fallback_p{fallback_percentile}',
                      'peaks': [float(bin_centers[dominant_idx])],
@@ -1166,10 +1286,10 @@ def find_sensitivity_threshold(values, n_bins=50, smooth_sigma=1.5,
     threshold_bin_idx = dominant_idx + int(below_idxs[0])
     threshold         = float(bin_centers[threshold_bin_idx])
 
-    print(f"  Picco dominante  : {bin_centers[dominant_idx]:.4f}  "
-          f"(densità {peak_density:.4f})")
-    print(f"  Livello 'zero'   : {zero_level:.4f}  ({zero_fraction*100:.0f}% del picco)")
-    print(f"  ✓ Threshold (prima discesa a zero): {threshold:.4f}")
+    print(f"  Dominant peak    : {bin_centers[dominant_idx]:.4f}  "
+          f"(density {peak_density:.4f})")
+    print(f"  'Zero' level     : {zero_level:.4f}  ({zero_fraction*100:.0f}% of the peak)")
+    print(f"  [OK] Threshold (first drop to zero): {threshold:.4f}")
 
     return threshold, {**info_base,
                        'method':     'density_near_zero',
@@ -1181,15 +1301,15 @@ def find_sensitivity_threshold(values, n_bins=50, smooth_sigma=1.5,
 
 def _draw_sensitivity_distribution(ax, core_score, threshold, bimodal_info):
     """
-    Disegna la distribuzione dei valori di Hotspot Index su un asse
-    già esistente (usato sia nella figura principale che nel plot standalone).
+    Draws the distribution of Hotspot Index values on an existing axis
+    (used both in the main figure and in the standalone plot).
 
     Layout:
-      - Istogramma con fill bicolore (< threshold = light purple, > threshold = dark purple)
-      - Curva KDE smoothed
-      - Linee verticali ai picchi (verde tratteggiato)
-      - Linea verticale al threshold (arancione tratteggiata) + shading
-      - Annotazione testuale del valore threshold
+      - Bicolor-filled histogram (< threshold = light purple, > threshold = dark purple)
+      - Smoothed KDE-like curve
+      - Vertical lines at the peaks (dashed green)
+      - Vertical line at the threshold (dashed orange) + shading
+      - Text annotation of the threshold value
     """
     bin_centers = bimodal_info['bin_centers']
     smoothed    = bimodal_info['smoothed_density']
@@ -1198,29 +1318,29 @@ def _draw_sensitivity_distribution(ax, core_score, threshold, bimodal_info):
     zero_level  = bimodal_info.get('zero_level')
     method      = bimodal_info.get('method', '')
 
-    # Palette coerente con la heatmap ΔlogP sopra (RdBu, lato rosso):
-    COLOR_RIGID    = '#67001F'   # rosso scurissimo RdBu (residuo 42 nella heatmap)
-    COLOR_FLEXIBLE = '#FDDBC7'   # rosa pallido RdBu (Y/A53 nella heatmap)
-    COLOR_CURVE    = '#4A0015'   # ancora più scuro per la curva KDE
-    COLOR_THR      = '#111111'   # nero per la dashed line threshold
+    # Palette consistent with the DeltaLogP heatmap above (RdBu, red side):
+    COLOR_RIGID    = '#67001F'   # darkest RdBu red (residue 42 in the heatmap)
+    COLOR_FLEXIBLE = '#FDDBC7'   # pale pink RdBu (Y/A53 in the heatmap)
+    COLOR_CURVE    = '#4A0015'   # even darker, for the KDE curve
+    COLOR_THR      = '#111111'   # black for the threshold dashed line
 
-    # ── Istogramma bicolore ───────────────────────────────────────────────
+    # -- Bicolor histogram ---------------------------------------------------
     bin_width = bin_centers[1] - bin_centers[0] if len(bin_centers) > 1 else 1.0
     for cx, dens in zip(bin_centers, smoothed):
         color = COLOR_RIGID if cx > threshold else COLOR_FLEXIBLE
         ax.bar(cx, dens, width=bin_width * 0.92, color=color, alpha=0.55,
                edgecolor='none', align='center')
 
-    # ── Curva KDE smoothed ────────────────────────────────────────────────
+    # -- Smoothed KDE-like curve ----------------------------------------------
     ax.plot(bin_centers, smoothed, color=COLOR_CURVE, lw=2.2,
             label='Smoothed density', zorder=4)
 
-    # ── Linea orizzontale del livello "quasi-zero" ────────────────────────
+    # -- Horizontal "near-zero" level line ------------------------------------
     if zero_level is not None:
         ax.axhline(zero_level, color='#888', linestyle=':', lw=1.2, alpha=0.7,
                    label=f'threshold ({zero_level:.3f})')
 
-    # ── Picco dominante ────────────────────────────────────────────────────
+    # -- Dominant peak ----------------------------------------------------------
     peaks = bimodal_info.get('peaks', [])
     if peaks:
         ax.axvline(peaks[0], color='#555', linestyle=':', lw=1.4, zorder=3)
@@ -1233,7 +1353,7 @@ def _draw_sensitivity_distribution(ax, core_score, threshold, bimodal_info):
             arrowprops=dict(arrowstyle='->', color='#555', lw=1.0),
         )
 
-    # ── Threshold: linea nera + shading + annotazione ─────────────────────
+    # -- Threshold: black line + shading + annotation -------------------------
     y_max = smoothed.max() * 1.35
     thr_label = (
         f'threshold = {threshold:.3f}'
@@ -1261,10 +1381,10 @@ def _draw_sensitivity_distribution(ax, core_score, threshold, bimodal_info):
     )
 
     ax.set_ylim(0, y_max)
-    ax.set_xlabel('Hotspot Index (mean |ΔlogP|)', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Hotspot Index (mean |DeltaLogP|)', fontsize=14, fontweight='bold')
     ax.set_ylabel('Density', fontsize=14)
     method_str = 'near-zero cutoff' if method == 'density_near_zero' else 'p75 fallback'
-    ax.set_title(f'Hotspot Index distribution  —  threshold: {method_str}',
+    ax.set_title(f'Hotspot Index distribution  -  threshold: {method_str}',
                  fontsize=10, fontweight='bold')
     ax.legend(fontsize=10, loc='upper right', framealpha=0.7)
     ax.tick_params(labelsize=14)
@@ -1273,15 +1393,15 @@ def _draw_sensitivity_distribution(ax, core_score, threshold, bimodal_info):
 def plot_sensitivity_distribution_standalone(core_score, threshold, bimodal_info,
                                              protein_name='Protein', output_path=None):
     """
-    Figura standalone della distribuzione dei valori di Hotspot Index
-    con il threshold bimodale evidenziato.
+    Standalone figure of the Hotspot Index value distribution with the
+    bimodal threshold highlighted.
 
-    Salvata come 'hotspot_index_distribution.png' nella cartella output.
+    Saved as 'hotspot_index_distribution.png' in the output folder.
     """
     fig, ax = plt.subplots(figsize=(8, 4.5), facecolor='white')
     _draw_sensitivity_distribution(ax, core_score, threshold, bimodal_info)
     fig.suptitle(
-        f'{protein_name} — Hotspot Index distribution',
+        f'{protein_name} - Hotspot Index distribution',
         fontsize=14, fontweight='bold', y=1.01
     )
     plt.tight_layout()
@@ -1293,12 +1413,12 @@ def plot_sensitivity_distribution_standalone(core_score, threshold, bimodal_info
 def plot_aggregation_mutability_landscape(scan_results, protein_name,
                                           output_path=None, figsize=(22, 16)):
     """
-    Figura principale del paper: aggregation mutability landscape.
+    Main figure for the paper: aggregation mutability landscape.
 
-    3 pannelli sovrapposti:
-      1. ΔlogP heatmap (20 × L_covered)      — landscape completo
-      2. Hotspot Index bar chart     — mean |ΔlogP| per posizione
-      3. Distribuzione Hotspot Index — istogramma + KDE + threshold bimodale
+    3 stacked panels:
+      1. DeltaLogP heatmap (20 x L_covered)  -- full landscape
+      2. Hotspot Index bar chart     -- mean |DeltaLogP| per position
+      3. Hotspot Index distribution  -- histogram + KDE + bimodal threshold
     """
     positions   = scan_results['positions']
     wt_aas      = scan_results['wt_aas']
@@ -1309,7 +1429,7 @@ def plot_aggregation_mutability_landscape(scan_results, protein_name,
     x = np.arange(L)
     tick_positions = list(range(0, L, 3))
 
-    # ── Calcola threshold bimodale una sola volta ─────────────────────────
+    # -- Compute the bimodal threshold only once -----------------------------
     core_thr, bimodal_info = find_sensitivity_threshold(core_score)
     method_label = (
         f"threshold = {core_thr:.3f}"
@@ -1320,10 +1440,10 @@ def plot_aggregation_mutability_landscape(scan_results, protein_name,
     fig = plt.figure(figsize=figsize, facecolor='white')
     gs  = gridspec.GridSpec(3, 1, hspace=0.50, height_ratios=[3, 1, 1.4], figure=fig)
 
-    # ── Pannello 1: ΔlogP heatmap ─────────────────────────────────────────
+    # -- Panel 1: DeltaLogP heatmap --------------------------------------------
     ax1 = fig.add_subplot(gs[0])
 
-    delta_T = delta_logp.T   # (20, L) per imshow
+    delta_T = delta_logp.T   # (20, L) for imshow
     vmax    = max(2.0, float(np.percentile(np.abs(delta_T), 97)))
     norm    = TwoSlopeNorm(vmin=-vmax, vcenter=0, vmax=vmax)
 
@@ -1343,27 +1463,28 @@ def plot_aggregation_mutability_landscape(scan_results, protein_name,
     )
     ax1.set_ylabel('Amino acid', fontsize=14, fontweight='bold')
     ax1.set_title(
-        f'Mutability Landscape — {protein_name}\n'
-        f'ΔlogP for each position in the sequence (black dot = WT)',
+        f'Mutability Landscape - {protein_name}\n'
+        f'DeltaLogP for each position in the sequence (black dot = WT)',
         fontsize=13, fontweight='bold', pad=12
     )
 
     cbar = plt.colorbar(im, ax=ax1, fraction=0.02, pad=0.01)
-    cbar.set_label('ΔlogP', fontsize=14, fontweight='bold')
+    cbar.set_label('DeltaLogP', fontsize=14, fontweight='bold')
     cbar.ax.tick_params(labelsize=14)
 
-    # ── Pannello 2: Hotspot Index bar chart ──────────────────────
+    # -- Panel 2: Hotspot Index bar chart --------------------------
     ax2 = fig.add_subplot(gs[1], sharex=ax1)
 
-    # mean_signed distingue la direzione dello spostamento medio:
-    #   < 0  → WT (quasi) ottimale, mutazioni penalizzate → vero hotspot/breaker
-    #   >= 0 → WT sub-ottimale secondo il modello, mutazioni favorite → posizione
-    #          "tollerante", core_score alto ma NON un hotspot di aggregazione
+    # mean_signed distinguishes the direction of the average shift:
+    #   < 0  -> WT (near) optimal, mutations penalized -> a true hotspot/breaker
+    #   >= 0 -> WT sub-optimal according to the model, mutations favored ->
+    #          a "tolerant" position, high core_score but NOT an
+    #          aggregation hotspot
     mean_signed = scan_results.get('mean_signed', delta_logp.mean(axis=1))
 
-    COLOR_BREAKER  = "#9B1111"   # rosso scuro — vero hotspot (WT ottimale, muta = peggio)
-    COLOR_TOLERANT = "#1B5E6B"   # petrolio — WT sub-ottimale (muta = meglio)
-    COLOR_NEUTRAL  = "#EEC2A9"   # pesca chiaro — posizione flessibile, non sensibile
+    COLOR_BREAKER  = "#9B1111"   # dark red - true hotspot (WT optimal, mutation = worse)
+    COLOR_TOLERANT = "#1B5E6B"   # teal - WT sub-optimal (mutation = better)
+    COLOR_NEUTRAL  = "#EEC2A9"   # light peach - flexible, not sensitive position
 
     colors_bar = []
     for v, ms in zip(core_score, mean_signed):
@@ -1391,20 +1512,20 @@ def plot_aggregation_mutability_landscape(scan_results, protein_name,
     )
     ax2.set_xlabel('Sequence position', fontsize=14, fontweight='bold', labelpad=8)
 
-    # ── Pannello 3: Distribuzione Hotspot Index ─────────────────
-    # Non condivide l'asse X con i pannelli superiori (asse diverso: valori, non posizioni)
+    # -- Panel 3: Hotspot Index distribution -----------------------
+    # Does not share the X axis with the panels above (different axis: values, not positions)
     ax3 = fig.add_subplot(gs[2])
     _draw_sensitivity_distribution(ax3, core_score, core_thr, bimodal_info)
 
     plt.suptitle(
-        f'{protein_name} — Full Sequence Aggregation Mutability Landscape',
+        f'{protein_name} - Full Sequence Aggregation Mutability Landscape',
         fontsize=14, fontweight='bold', y=1.01
     )
 
     if output_path:
         _save_multiformat(fig, output_path, label="aggregation_mutability_landscape")
 
-        # Figura standalone della sola distribuzione (per paper / supplementary)
+        # Standalone figure with only the distribution (for paper / supplementary)
         diag_path = str(Path(output_path).parent / 'hotspot_index_distribution.png')
         plot_sensitivity_distribution_standalone(
             core_score, core_thr, bimodal_info,
@@ -1414,7 +1535,7 @@ def plot_aggregation_mutability_landscape(scan_results, protein_name,
 
 
 def save_scan_report(scan_results, protein_name, out_dir):
-    """Salva scan CSV: una riga per posizione, con top-3 mut compatibili e breaker."""
+    """Saves the scan CSV: one row per position, with the top-3 compatible mutations and breakers."""
     rows = []
     delta_logp = scan_results['delta_logp']   # (L, 20)
 
@@ -1423,12 +1544,12 @@ def save_scan_report(scan_results, protein_name, out_dir):
         dlp    = delta_logp[i]
         wt_idx = AA_TO_IDX.get(wt_aa, -1)
 
-        # Top-3 compatibili (esclude WT)
+        # Top-3 compatible (excludes WT)
         sorted_desc = np.argsort(dlp)[::-1]
         compat = [(AA_ORDER[j], round(float(dlp[j]), 3))
                   for j in sorted_desc if j != wt_idx][:3]
 
-        # Top-3 breaker
+        # Top-3 breakers
         sorted_asc = np.argsort(dlp)
         breakers   = [(AA_ORDER[j], round(float(dlp[j]), 3))
                       for j in sorted_asc if j != wt_idx][:3]
@@ -1436,15 +1557,16 @@ def save_scan_report(scan_results, protein_name, out_dir):
         mean_signed_i = float(scan_results['mean_signed'][i])
         is_core_i     = scan_results['core_score'][i] > np.percentile(scan_results['core_score'], 75)
 
-        # Categoria esplicita: distingue hotspot "veri" (breaker, WT ottimale)
-        # da posizioni dove il WT stesso appare sub-ottimale secondo il modello
-        # (core_score alto solo perché quasi tutte le mutazioni sono FAVOREVOLI).
+        # Explicit category: distinguishes "true" hotspots (breaker, WT
+        # optimal) from positions where the WT itself looks sub-optimal
+        # according to the model (high core_score only because almost
+        # every mutation is FAVORABLE).
         if not is_core_i:
             category_i = 'neutral'
         elif mean_signed_i < 0:
-            category_i = 'breaker_hotspot'      # vero hotspot: WT ottimale, mutazioni penalizzate
+            category_i = 'breaker_hotspot'      # true hotspot: WT optimal, mutations penalized
         else:
-            category_i = 'tolerant_suboptimal_wt'  # WT stesso sub-ottimale, mutazioni favorite
+            category_i = 'tolerant_suboptimal_wt'  # WT itself sub-optimal, mutations favored
 
         rows.append({
             'position':             pos,
@@ -1466,14 +1588,14 @@ def save_scan_report(scan_results, protein_name, out_dir):
 
     csv_path = Path(out_dir) / 'sequence_scan_report.csv'
     pd.DataFrame(rows).to_csv(csv_path, index=False)
-    print(f"✓ Sequence scan CSV salvato: {csv_path}")
+    print(f"[OK] Sequence scan CSV saved: {csv_path}")
     return csv_path
 
 def plot_delta_logp(delta_logp, column_labels, window_seq, wt_idx,
                    output_path=None, figsize=(18, 10), protein_name='Protein'):
     """
-    Heatmap ΔlogP (20 AA × N finestre).
-    Colormap divergente: blu = compatibile, rosso = breaker.
+    DeltaLogP heatmap (20 AA x N windows).
+    Diverging colormap: blue = compatible, red = breaker.
     """
     row_labels = [AA_NAMES[i] for i in range(20)]
 
@@ -1485,7 +1607,7 @@ def plot_delta_logp(delta_logp, column_labels, window_seq, wt_idx,
     im = ax.imshow(delta_logp, aspect='auto', cmap=cmap, norm=norm,
                    interpolation='nearest')
 
-    # Griglia
+    # Grid
     ax.set_xticks(np.arange(delta_logp.shape[1]) + 0.5, minor=True)
     ax.set_yticks(np.arange(20) + 0.5, minor=True)
     ax.grid(which='minor', color='#cccccc', linestyle='-', linewidth=0.4)
@@ -1493,7 +1615,7 @@ def plot_delta_logp(delta_logp, column_labels, window_seq, wt_idx,
     ax.set_xlim(-0.5, delta_logp.shape[1] - 0.5)
     ax.set_ylim(20 - 0.5, -0.5)
 
-    # Valori nelle celle
+    # Values inside the cells
     for c in range(delta_logp.shape[1]):
         for r in range(20):
             val = delta_logp[r, c]
@@ -1502,11 +1624,11 @@ def plot_delta_logp(delta_logp, column_labels, window_seq, wt_idx,
                 ax.text(c, r, f'{val:.1f}', ha='center', va='center',
                         color=color, fontsize=10, fontweight='bold')
             else:
-                # Valore neutro (include riga WT = 0.0 esatto)
+                # Neutral value (includes the WT row = exact 0.0)
                 ax.text(c, r, '0.0', ha='center', va='center',
                         color='#999999', fontsize=9.5, fontstyle='italic')
 
-    # Evidenzia riga WT
+    # Highlight the WT row
     ax.add_patch(plt.Rectangle(
         (-0.5, wt_idx - 0.5), delta_logp.shape[1], 1,
         fill=False, edgecolor='#FFD700', linewidth=2.5, zorder=3
@@ -1517,21 +1639,21 @@ def plot_delta_logp(delta_logp, column_labels, window_seq, wt_idx,
                    rotation_mode='anchor', fontsize=11)
     ax.set_yticks(np.arange(20))
     ax.set_yticklabels(
-        [f'{"→ " if i == wt_idx else "   "}{AA_NAMES[i]}' for i in range(20)],
+        [f'{"-> " if i == wt_idx else "   "}{AA_NAMES[i]}' for i in range(20)],
         fontsize=14
     )
 
     ax.set_xlabel(f'{protein_name} windows', fontsize=14, fontweight='bold', labelpad=10)
     ax.set_ylabel('Mutation', fontsize=14, fontweight='bold')
     ax.set_title(
-        f'ΔlogP Mutational Landscape — {protein_name}\n'
+        f'DeltaLogP Mutational Landscape - {protein_name}\n'
         f'Window: {window_seq}  |  WT center: {AA_ORDER[wt_idx]} (highlighted row)',
         fontsize=14, fontweight='bold', pad=15
     )
 
 
     cbar = plt.colorbar(im, ax=ax, fraction=0.03, pad=0.04)
-    cbar.set_label('ΔlogP  (mut − WT)', fontsize=14, fontweight='bold')
+    cbar.set_label('DeltaLogP  (mut - WT)', fontsize=14, fontweight='bold')
     cbar.ax.tick_params(labelsize=14)
     plt.tight_layout()
 
@@ -1545,24 +1667,24 @@ def plot_analysis_summary(entropy, core_score, tolerance, delta_logp,
                           breaker_threshold=-5.0, output_path=None,
                           figsize=(18, 14)):
     """
-    Figura multi-pannello (4 righe):
+    Multi-panel figure (4 rows):
       1. Entropy profile
       2. Core score (fibril conservation)
       3. Mutational tolerance
-      4. WT probability vs finestra (controllo)
+      4. WT probability vs window (sanity check)
     """
     N    = len(entropy)
     x    = np.arange(N)
     xlbls = [f"W{i+1}" for i in range(N)]
 
-    # Soglie per hotspot / core
+    # Hotspot / core thresholds
     ent_thr   = np.percentile(entropy, 75)
     core_thr  = np.percentile(core_score, 75)
 
     fig = plt.figure(figsize=figsize, facecolor='white')
     gs  = gridspec.GridSpec(4, 1, hspace=0.55, figure=fig)
 
-    # ── Pannello 1: Entropy ──────────────────────────────────────────────────
+    # -- Panel 1: Entropy -------------------------------------------------------
     ax1 = fig.add_subplot(gs[0])
     bars = ax1.bar(x, entropy, color='#4A90D9', edgecolor='none', alpha=0.85)
     for i, (v, b) in enumerate(zip(entropy, bars)):
@@ -1570,30 +1692,30 @@ def plot_analysis_summary(entropy, core_score, tolerance, delta_logp,
             b.set_color('#4A90D9')
             b.set_alpha(0.95)
     ax1.axhline(ent_thr, color='#4A90D9', linestyle='--', lw=1.5,
-                label=f'75° percentile ({ent_thr:.2f})')
+                label=f'75th percentile ({ent_thr:.2f})')
     ax1.set_ylabel('Shannon Entropy', fontsize=10, fontweight='bold')
-    ax1.set_title(f'Mutational entropy per window — {window_seq}',
+    ax1.set_title(f'Mutational entropy per window - {window_seq}',
                   fontsize=11, fontweight='bold')
     ax1.set_xticks(x)
     ax1.set_xticklabels(xlbls, rotation=45, ha='right', rotation_mode='anchor', fontsize=8)
     ax1.legend(fontsize=9, loc='upper right')
     ax1.set_xlim(-0.5, N - 0.5)
 
-    # Annotazioni hotspot
+    # Hotspot annotations
     for i, v in enumerate(entropy):
         if v > ent_thr:
             ax1.text(i, v + 0.01, 'H', ha='center', va='bottom',
                      fontsize=7, color='#E8512B', fontweight='bold')
 
-    # ── Pannello 2: Core score ───────────────────────────────────────────────
+    # -- Panel 2: Core score --------------------------------------------------
     ax2 = fig.add_subplot(gs[1])
     bars2 = ax2.bar(x, core_score, color='#2E7D32', edgecolor='none', alpha=0.85)
     for i, (v, b) in enumerate(zip(core_score, bars2)):
         if v > core_thr:
             b.set_color('#2E7D32')
     ax2.axhline(core_thr, color='#2E7D32', linestyle='--', lw=1.5,
-                label=f'75° percentile ({core_thr:.2f})')
-    ax2.set_ylabel('Fibril Core Score\n(mean |ΔlogP|)', fontsize=10, fontweight='bold')
+                label=f'75th percentile ({core_thr:.2f})')
+    ax2.set_ylabel('Fibril Core Score\n(mean |DeltaLogP|)', fontsize=10, fontweight='bold')
     ax2.set_title('Structural conservation (high = fibril core)',
                   fontsize=11, fontweight='bold')
     ax2.set_xticks(x)
@@ -1606,16 +1728,16 @@ def plot_analysis_summary(entropy, core_score, tolerance, delta_logp,
             ax2.text(i, v + 0.02, 'C', ha='center', va='bottom',
                      fontsize=7, color='#1A237E', fontweight='bold')
 
-    # ── Pannello 3: Mutational tolerance ────────────────────────────────────
+    # -- Panel 3: Mutational tolerance -----------------------------------------
     ax3 = fig.add_subplot(gs[2])
     bars3 = ax3.bar(x, tolerance, color='#7B1FA2', edgecolor='none', alpha=0.85)
     for i, (v, b) in enumerate(zip(tolerance, bars3)):
         if v >= 5:
             b.set_color('#FF6F00')
     ax3.axhline(5, color='#FF6F00', linestyle='--', lw=1.5,
-                label='Min. 5 mutazioni tollerate (designable)')
-    ax3.set_ylabel('N tolerated mutations\n(ΔlogP > -2)', fontsize=10, fontweight='bold')
-    ax3.set_title('Mutational tolerance — designable positions',
+                label='Min. 5 tolerated mutations (designable)')
+    ax3.set_ylabel('N tolerated mutations\n(DeltaLogP > -2)', fontsize=10, fontweight='bold')
+    ax3.set_title('Mutational tolerance - designable positions',
                   fontsize=11, fontweight='bold')
     ax3.set_xticks(x)
     ax3.set_xticklabels(xlbls, rotation=45, ha='right', rotation_mode='anchor', fontsize=8)
@@ -1626,14 +1748,15 @@ def plot_analysis_summary(entropy, core_score, tolerance, delta_logp,
         ax3.text(i, v + 0.1, str(int(v)), ha='center', va='bottom',
                  fontsize=7, color='black')
 
-    # ── Pannello 4: WT probability ───────────────────────────────────────────
+    # -- Panel 4: WT probability -------------------------------------------------
     ax4 = fig.add_subplot(gs[3])
-    # ΔlogP del WT rispetto a se stesso = 0, ma usiamo la prob assoluta
-    wt_delta = delta_logp[wt_idx, :]   # (N,) — 0 per definizione quando mascherato
-    # Mostra invece il valore assoluto medio dei breaker per finestra
+    # DeltaLogP of the WT relative to itself = 0, but here we show the
+    # absolute probability instead
+    wt_delta = delta_logp[wt_idx, :]   # (N,) -- 0 by definition when masked
+    # Show instead the average absolute value of breakers per window
     n_breakers_per_win = (delta_logp < breaker_threshold).sum(axis=0)
     ax4.bar(x, n_breakers_per_win, color='#C62828', edgecolor='none', alpha=0.85)
-    ax4.set_ylabel(f'N breaker mutations\n(ΔlogP < {breaker_threshold})',
+    ax4.set_ylabel(f'N breaker mutations\n(DeltaLogP < {breaker_threshold})',
                    fontsize=10, fontweight='bold')
     ax4.set_title(f'Breaker mutations per window (threshold: {breaker_threshold})',
                   fontsize=11, fontweight='bold')
@@ -1655,8 +1778,8 @@ def plot_embedding_scatter(coords_2d, method_label, entropy, core_score,
                            column_labels, window_seq, output_path=None,
                            figsize=(14, 6)):
     """
-    Scatter 2D degli embedding strutturali, colorato per entropy (sx)
-    e core score (dx).
+    2D scatter of the structural embeddings, colored by entropy (left)
+    and core score (right).
     """
     fig, axes = plt.subplots(1, 2, figsize=figsize, facecolor='white')
 
@@ -1679,7 +1802,7 @@ def plot_embedding_scatter(coords_2d, method_label, entropy, core_score,
         ax.set_title(f'Embedding clustering\n{label}', fontsize=11, fontweight='bold')
 
     fig.suptitle(
-        f'Structural embedding space — {window_seq}  [{method_label}]',
+        f'Structural embedding space - {window_seq}  [{method_label}]',
         fontsize=13, fontweight='bold', y=1.02
     )
     plt.tight_layout()
@@ -1689,15 +1812,15 @@ def plot_embedding_scatter(coords_2d, method_label, entropy, core_score,
     plt.close(fig)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# BLOCCO 5 — Report JSON / CSV
-# ═══════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# BLOCK 5 - JSON / CSV report
+# ============================================================================
 
 def build_report(delta_logp, entropy, core_score, tolerance,
                  column_labels, window_seq, wt_idx,
                  breaker_threshold=-5.0, design_threshold=-1.0):
     """
-    Genera dict con riepilogo numerico completo.
+    Builds a dict with the full numeric summary.
     """
     center = len(window_seq) // 2
     wt_aa  = window_seq[center]
@@ -1707,7 +1830,7 @@ def build_report(delta_logp, entropy, core_score, tolerance,
     hotspots   = np.where(entropy > np.percentile(entropy, 75))[0].tolist()
     core_wins  = np.where(core_score > np.percentile(core_score, 75))[0].tolist()
 
-    # Per ogni finestra, top-3 mutazioni più compatibili e top-3 breaker
+    # For each window, top-3 most compatible mutations and top-3 breakers
     per_window = []
     for win_idx, lbl in enumerate(column_labels):
         dlp = delta_logp[:, win_idx]
@@ -1729,7 +1852,7 @@ def build_report(delta_logp, entropy, core_score, tolerance,
         })
 
     report = {
-        'protein':   'α-synuclein',
+        'protein':   'alpha-synuclein',
         'window':    window_seq,
         'wt_center': wt_aa,
         'n_windows': int(delta_logp.shape[1]),
@@ -1748,7 +1871,7 @@ def build_report(delta_logp, entropy, core_score, tolerance,
 
 
 def save_report(report, out_dir):
-    """Salva JSON e CSV del report."""
+    """Saves the report as JSON and CSV."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1756,7 +1879,7 @@ def save_report(report, out_dir):
     json_path = out_dir / 'analysis_report.json'
     with open(json_path, 'w') as f:
         json.dump(report, f, indent=2)
-    print(f"✓ Report JSON salvato: {json_path}")
+    print(f"[OK] JSON report saved: {json_path}")
 
     # CSV (per-window)
     rows = []
@@ -1777,84 +1900,96 @@ def save_report(report, out_dir):
         })
     csv_path = out_dir / 'analysis_report.csv'
     pd.DataFrame(rows).to_csv(csv_path, index=False)
-    print(f"✓ Report CSV salvato: {csv_path}")
+    print(f"[OK] CSV report saved: {csv_path}")
 
-    # Stampa breaker peggiori
-    print("\n── Top-10 breaker mutations ──")
-    print(f"{'Win':>5} {'AA':>4} {'ΔlogP':>10}")
+    # Print the worst breakers
+    print("\n-- Top-10 breaker mutations --")
+    print(f"{'Win':>5} {'AA':>4} {'DeltaLogP':>10}")
     print("-" * 25)
     for win_idx, aa, score in report['worst_breakers']:
         print(f"  {win_idx:>3}   {aa:>2}   {score:>9.3f}")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ============================================================================
 # MAIN PIPELINE
-# ═══════════════════════════════════════════════════════════════════════════════
+# ============================================================================
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Heatmap probabilità + analisi mutazionale completa α-synuclein"
+        description="Probability heatmap + full mutational analysis for a given protein"
     )
     # Input
-    ap.add_argument('--model',            required=True)
-    ap.add_argument('--data',             required=True)
-    ap.add_argument('--protein_metadata', required=True)
-    ap.add_argument('--rotamer_csv',      default='rotamer_localmax_maxdens.csv')
-    ap.add_argument('--fasta',            default=None)
-    ap.add_argument('--window_seq',       default='NVGGA')
-    ap.add_argument('--protein_name',     default='α-synuclein')
+    ap.add_argument('--model', required=True,
+                     help="Path to the trained model checkpoint (.pt file, e.g. teachers/teacher_X/best_teacher.pt).")
+    ap.add_argument('--data', required=True,
+                     help="Path to the windows dataset (.npz file, e.g. windows_all_local.npz).")
+    ap.add_argument('--protein_metadata', required=True,
+                     help="Path to the JSON file mapping window index to {pdb_id, protein_class}.")
+    ap.add_argument('--rotamer_csv', default='rotamer_localmax_maxdens.csv',
+                     help="Path to the rotamer library CSV (default: rotamer_localmax_maxdens.csv).")
+    ap.add_argument('--fasta', default=None,
+                     help="Path to a FASTA file with the full protein sequence. Required for --sequence_scan and for showing sequence positions in labels.")
+    ap.add_argument('--window_seq', default='NVGGA',
+                     help="5-letter amino acid window sequence to analyze (e.g. 'VGGAV') (default: NVGGA).")
+    ap.add_argument('--protein_name', default='alpha-synuclein',
+                     help="Protein class name to filter windows by, and to display in plot titles (default: alpha-synuclein).")
 
     # Tokens
-    ap.add_argument('--mask_token_aa', type=int, default=20)
-    ap.add_argument('--mask_token_cl', type=int, default=0)
+    ap.add_argument('--mask_token_aa', type=int, default=20,
+                     help="Integer index used as the MASK token for the amino acid channel (default: 20).")
+    ap.add_argument('--mask_token_cl', type=int, default=0,
+                     help="Integer index used as the MASK token for the cluster channel (default: 0).")
 
     # Output
     ap.add_argument('--output',   default='results/asynuclein_analysis',
-                    help='Cartella di output (verrà creata se non esiste)')
+                    help='Output folder (created if it does not exist)')
 
-    # Analisi
+    # Analysis
     ap.add_argument('--breaker_threshold', type=float, default=None,
-                    help='Soglia FISSA ΔlogP per definire breaker. '
-                         'Se omessa, usa --breaker_percentile (raccomandato).')
+                    help='FIXED DeltaLogP threshold to define breakers. '
+                         'If omitted, uses --breaker_percentile (recommended).')
     ap.add_argument('--breaker_percentile', type=float, default=5.0,
-                    help='Percentile per soglia breaker adattiva (default: 5 = bottom 5%%). '
-                         'Ignorato se --breaker_threshold è fornita.')
+                    help='Percentile for the adaptive breaker threshold (default: 5 = bottom 5%%). '
+                         'Ignored if --breaker_threshold is provided.')
     ap.add_argument('--design_threshold',  type=float, default=-1.0,
-                    help='Soglia ΔlogP per definire mutazioni tollerate (default: -1)')
+                    help='DeltaLogP threshold to define tolerated mutations (default: -1)')
     ap.add_argument('--min_tolerated',     type=int,   default=5,
-                    help='Min mutazioni tollerate per finestra designable (default: 5)')
+                    help='Min tolerated mutations per designable window (default: 5)')
     ap.add_argument('--embedding_method',  default='pca',
                     choices=['pca', 'umap'],
-                    help='Metodo riduzione embedding (default: pca)')
+                    help='Embedding reduction method (default: pca)')
     ap.add_argument('--skip_embedding',    action='store_true',
-                    help='Salta estrazione embedding (più veloce)')
+                    help='Skip embedding extraction (faster)')
     ap.add_argument('--sequence_scan',     action='store_true',
-                    help='Esegui scan su TUTTA la sequenza (richiede --fasta)')
+                    help='Run a scan over the WHOLE sequence (requires --fasta)')
     ap.add_argument('--start_residue',    type=int, default=1,
-                    help='Residuo di partenza in numerazione CANONICA (default: 1 = nessun filtro). '
-                         'Interpretato secondo --residue_offset. '
-                         'Finestre e posizioni prima di questo residuo vengono escluse.')
+                    help='Starting residue in CANONICAL numbering (default: 1 = no filter). '
+                         'Interpreted according to --residue_offset. '
+                         'Windows and positions before this residue are excluded.')
     ap.add_argument('--end_residue',      type=int, default=None,
-                    help='Residuo finale in numerazione CANONICA (default: None = nessun filtro). '
-                         'Interpretato secondo --residue_offset. '
-                         'Finestre e posizioni dopo questo residuo vengono escluse.')
+                    help='Final residue in CANONICAL numbering (default: None = no filter). '
+                         'Interpreted according to --residue_offset. '
+                         'Windows and positions after this residue are excluded.')
     ap.add_argument('--residue_offset',   type=int, default=0,
-                    help='Offset per convertire la posizione 1-based del FASTA nella numerazione '
-                         'canonica del residuo: residuo_canonico = posizione_FASTA + offset. '
-                         'Serve quando il FASTA del costrutto contiene Met/His-tag/linker aggiunti. '
-                         'Es.: HET-s 2RNM -> --residue_offset 216 (FASTA pos 2 = K218); '
+                    help='Offset used to convert the 1-based FASTA position into canonical '
+                         'residue numbering: canonical_residue = FASTA_position + offset. '
+                         'Needed when the construct FASTA includes an added Met/His-tag/linker. '
+                         'E.g.: HET-s 2RNM -> --residue_offset 216 (FASTA pos 2 = K218); '
                          'Mrip3/RIPK3 6JPD -> --residue_offset 402 (FASTA pos 7 = res 409). '
-                         'Vale sia per le etichette mostrate sia per --start_residue/--end_residue.')
+                         'Applies to both the displayed labels and --start_residue/--end_residue.')
     ap.add_argument('--auto_offset',      action='store_true',
-                    help='Determina --residue_offset in automatico dal PDB id (header del FASTA) '
-                         'via mappatura SIFTS di PDBe, usando la numerazione depositata (autore). '
-                         'Richiede rete (ebi.ac.uk). Un --residue_offset esplicito (!=0) ha priorità. '
-                         'Se il PDB non è mappabile, si usa offset 0 con un warning.')
+                    help='Automatically determine --residue_offset from the PDB id (FASTA header) '
+                         'via the PDBe SIFTS mapping, using the deposited (author) numbering. '
+                         'Requires network access (ebi.ac.uk). An explicit --residue_offset (!=0) takes priority. '
+                         'If the PDB cannot be mapped, offset 0 is used with a warning.')
 
     # Layout
-    ap.add_argument('--colormap',  default='RdPu')
-    ap.add_argument('--figsize',   nargs=2, type=float, default=[18, 10], metavar=('W', 'H'))
-    ap.add_argument('--cpu',       action='store_true')
+    ap.add_argument('--colormap', default='RdPu',
+                     help="Matplotlib colormap name used for the probability heatmap (default: RdPu).")
+    ap.add_argument('--figsize', nargs=2, type=float, default=[18, 10], metavar=('W', 'H'),
+                     help="Figure size in inches as two numbers: width height (default: 18 10).")
+    ap.add_argument('--cpu', action='store_true',
+                     help="Force inference on CPU even if a CUDA GPU is available.")
 
     args   = ap.parse_args()
     device = torch.device('cpu' if args.cpu or not torch.cuda.is_available() else 'cuda')
@@ -1863,37 +1998,37 @@ def main():
     out_dir = Path(args.output)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── 1. Carica modello ──
+    # -- 1. Load model --
     model = load_model(args.model, device)
 
-    # ── 2. Carica dataset ──
+    # -- 2. Load dataset --
     data, protein_indices = load_dataset(
         args.data, args.protein_metadata, args.protein_name
     )
     if len(protein_indices) == 0:
-        print(f"⛔  Nessuna finestra trovata per '{args.protein_name}'.")
+        print(f"[ERROR] No window found for '{args.protein_name}'.")
         sys.exit(1)
 
-    # ── 3. Trova finestre matching ──
+    # -- 3. Find matching windows --
     matched_indices, _ = find_matching_windows(
         data, protein_indices, args.window_seq
     )
     if len(matched_indices) == 0:
-        print(f"⛔  Nessuna finestra matcha '{args.window_seq}'.")
+        print(f"[ERROR] No window matches '{args.window_seq}'.")
         sys.exit(1)
 
-    # ── 4. FASTA ──
+    # -- 4. FASTA --
     fasta_seq = None
     if args.fasta and Path(args.fasta).exists():
         fasta_seq = read_fasta(args.fasta)
-        print(f"\nFASTA: {len(fasta_seq)} residui")
+        print(f"\nFASTA: {len(fasta_seq)} residues")
     elif args.sequence_scan:
-        print("⛔  --sequence_scan richiede --fasta. Sequence scan disabilitato.")
+        print("[ERROR] --sequence_scan requires --fasta. Sequence scan disabled.")
         args.sequence_scan = False
 
-    # ── 4a. Offset di numerazione automatico (opzionale) ──
-    #   residuo_canonico = posizione_FASTA_1based + residue_offset
-    #   --residue_offset esplicito (!=0) vince; altrimenti prova SIFTS se --auto_offset.
+    # -- 4a. Automatic numbering offset (optional) --
+    #   canonical_residue = 1-based_FASTA_position + residue_offset
+    #   an explicit --residue_offset (!=0) wins; otherwise try SIFTS if --auto_offset.
     if args.auto_offset and args.residue_offset == 0:
         pdb_for_offset = _extract_pdb_id_from_fasta(args.fasta) if args.fasta else None
         if pdb_for_offset is None:
@@ -1912,14 +2047,14 @@ def main():
         if off is not None:
             args.residue_offset = off
             print(f"  [auto_offset] {pdb_for_offset}: residue_offset = {off}  "
-                  f"(residuo_canonico = pos_FASTA + {off})")
+                  f"(canonical_residue = FASTA_pos + {off})")
         else:
-            print(f"  [auto_offset] non determinato per {pdb_for_offset}; "
-                  f"uso residue_offset = {args.residue_offset}.")
+            print(f"  [auto_offset] could not be determined for {pdb_for_offset}; "
+                  f"using residue_offset = {args.residue_offset}.")
     elif args.auto_offset and args.residue_offset != 0:
-        print(f"  [auto_offset] ignorato: --residue_offset={args.residue_offset} impostato manualmente.")
+        print(f"  [auto_offset] ignored: --residue_offset={args.residue_offset} set manually.")
 
-    # ── 4b. Filtra finestre per start_residue ──
+    # -- 4b. Filter windows by start_residue --
     if fasta_seq and args.start_residue > 1:
         win_size = data['aa_ids'].shape[1]
         center   = win_size // 2
@@ -1937,16 +2072,16 @@ def main():
 
         n_removed = len(matched_indices) - len(filtered_matched)
         if n_removed > 0:
-            print(f"\n  [start_residue={args.start_residue}] Escluse {n_removed} finestre "
-                  f"con residuo centrale prima del residuo {args.start_residue}.")
+            print(f"\n  [start_residue={args.start_residue}] Excluded {n_removed} windows "
+                  f"with central residue before residue {args.start_residue}.")
         matched_indices = filtered_matched
-        print(f"  Finestre mantenute (≥ residuo {args.start_residue}): {len(matched_indices)}")
+        print(f"  Windows kept (>= residue {args.start_residue}): {len(matched_indices)}")
 
         if len(matched_indices) == 0:
-            print(f"⛔  Nessuna finestra rimasta dopo filtro start_residue={args.start_residue}.")
+            print(f"[ERROR] No window left after start_residue={args.start_residue} filter.")
             sys.exit(1)
 
-    # ── 4c. Filtra finestre per end_residue ──
+    # -- 4c. Filter windows by end_residue --
     if fasta_seq and args.end_residue is not None:
         win_size = data['aa_ids'].shape[1]
         center   = win_size // 2
@@ -1964,23 +2099,23 @@ def main():
 
         n_removed = len(matched_indices) - len(filtered_matched)
         if n_removed > 0:
-            print(f"\n  [end_residue={args.end_residue}] Escluse {n_removed} finestre "
-                  f"con residuo centrale dopo il residuo {args.end_residue}.")
+            print(f"\n  [end_residue={args.end_residue}] Excluded {n_removed} windows "
+                  f"with central residue after residue {args.end_residue}.")
         matched_indices = filtered_matched
-        print(f"  Finestre mantenute (≤ residuo {args.end_residue}): {len(matched_indices)}")
+        print(f"  Windows kept (<= residue {args.end_residue}): {len(matched_indices)}")
 
         if len(matched_indices) == 0:
-            print(f"⛔  Nessuna finestra rimasta dopo filtro end_residue={args.end_residue}.")
+            print(f"[ERROR] No window left after end_residue={args.end_residue} filter.")
             sys.exit(1)
 
-    # ── 5. Matrice probabilità ──
+    # -- 5. Probability matrix --
     prob_matrix = compute_probability_matrix(
         model, data, matched_indices, device,
         mask_token_aa=args.mask_token_aa,
         mask_token_cl=args.mask_token_cl
     )
 
-    # ── 6. Etichette ──
+    # -- 6. Labels --
     with open(args.protein_metadata) as f:
         prot_meta_full = json.load(f)
 
@@ -1989,7 +2124,7 @@ def main():
         protein_metadata=prot_meta_full, residue_offset=args.residue_offset
     )
 
-    # ── 7. Heatmap probabilità (originale) ──
+    # -- 7. Probability heatmap (original) --
     print_summary(prob_matrix, column_labels)
     plot_heatmap(
         prob_matrix, column_labels, args.window_seq,
@@ -1998,7 +2133,7 @@ def main():
         protein_name=args.protein_name
     )
 
-    # ── 8. ΔlogP landscape ──
+    # -- 8. DeltaLogP landscape --
     delta_logp, wt_idx = compute_delta_logp(prob_matrix, args.window_seq)
     plot_delta_logp(
         delta_logp, column_labels, args.window_seq, wt_idx,
@@ -2007,12 +2142,12 @@ def main():
         protein_name=args.protein_name
     )
 
-    # ── 9. Metriche per finestra ──
+    # -- 9. Per-window metrics --
     entropy    = compute_entropy_profile(prob_matrix)
     core_score = compute_core_score(delta_logp)
     tolerance  = compute_mutational_tolerance(delta_logp, threshold=-2.0)
 
-    # Determina soglia breaker: percentile adattivo (raccomandato) o fissa
+    # Determine the breaker threshold: adaptive percentile (recommended) or fixed
     if args.breaker_threshold is not None:
         effective_threshold = args.breaker_threshold
         breakers, _  = find_breakers(delta_logp, threshold=effective_threshold, percentile=None)
@@ -2021,10 +2156,10 @@ def main():
             delta_logp, percentile=args.breaker_percentile
         )
 
-    # ── analysis_summary, embedding e bimodal threshold disabilitati ──
+    # -- analysis_summary, embedding and bimodal threshold disabled --
     is_true_emb = False
 
-    # ── 11. Report finestre ──
+    # -- 11. Window report --
     report = build_report(
         delta_logp, entropy, core_score, tolerance,
         column_labels, args.window_seq, wt_idx,
@@ -2033,12 +2168,12 @@ def main():
     )
     save_report(report, out_dir)
 
-    # ── 12. Sequence scan (opzionale, figura da paper) ──
+    # -- 12. Sequence scan (optional, paper figure) --
     if args.sequence_scan and fasta_seq:
         print(f"\n{'='*60}")
-        print("SEQUENCE SCAN — Aggregation Mutability Landscape")
-        print(f"  Scansione di {len(fasta_seq)} residui di {args.protein_name}...")
-        print(f"  Finestre nel dataset: {len(protein_indices)}")
+        print("SEQUENCE SCAN - Aggregation Mutability Landscape")
+        print(f"  Scanning {len(fasta_seq)} residues of {args.protein_name}...")
+        print(f"  Windows in dataset: {len(protein_indices)}")
         print('='*60)
 
         scan_results = sequence_scan(
@@ -2059,25 +2194,25 @@ def main():
             )
             save_scan_report(scan_results, args.protein_name, out_dir)
 
-    # ── Summary finale ──
+    # -- Final summary --
     print(f"\n{'='*60}")
-    print(f"✓ Analisi completa salvata in: {out_dir}")
-    print(f"  heatmap_prob.png          ← probabilità (originale)")
-    print(f"  heatmap_delta_logp.png    ← landscape ΔlogP [fig. principale]")
-    print(f"  analysis_report.json      ← riepilogo numerico")
-    print(f"  analysis_report.csv       ← tabella per finestra")
+    print(f"[OK] Full analysis saved to: {out_dir}")
+    print(f"  heatmap_prob.png          <- probability (original)")
+    print(f"  heatmap_delta_logp.png    <- DeltaLogP landscape [main fig.]")
+    print(f"  analysis_report.json      <- numeric summary")
+    print(f"  analysis_report.csv       <- per-window table")
     if args.sequence_scan:
-        print(f"  aggregation_mutability_landscape.png  ← FIGURA DA PAPER (3 pannelli)")
-        print(f"  hotspot_index_distribution.png ← distribuzione bimodale standalone")
-        print(f"  sequence_scan_report.csv              ← landscape tabulare")
-    print(f"\n  Soglia breaker usata: {effective_threshold:.3f} "
-          f"({'p' + str(args.breaker_percentile) + ' adattivo' if args.breaker_threshold is None else 'fissa'})")
+        print(f"  aggregation_mutability_landscape.png  <- PAPER FIGURE (3 panels)")
+        print(f"  hotspot_index_distribution.png <- standalone bimodal distribution")
+        print(f"  sequence_scan_report.csv              <- tabular landscape")
+    print(f"\n  Breaker threshold used: {effective_threshold:.3f} "
+          f"({'adaptive p' + str(args.breaker_percentile) if args.breaker_threshold is None else 'fixed'})")
     if args.start_residue > 1:
-        print(f"  Filtro start_residue: ≥ {args.start_residue}")
+        print(f"  start_residue filter: >= {args.start_residue}")
     if args.end_residue is not None:
-        print(f"  Filtro end_residue:   ≤ {args.end_residue}")
+        print(f"  end_residue filter:   <= {args.end_residue}")
     print(f"{'='*60}")
-    print("✓ Done!")
+    print("[OK] Done!")
 
 
 if __name__ == '__main__':
