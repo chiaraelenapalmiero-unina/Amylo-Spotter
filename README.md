@@ -8,6 +8,7 @@ and the resulting per-position confidence is used to flag mutation-sensitive
 "hotspots" along a fibril structure.
 
 Manuscript in progress: *Palmiero et al.*
+### **Website version available at this link: ...**
 
 ## Pipeline overview
 
