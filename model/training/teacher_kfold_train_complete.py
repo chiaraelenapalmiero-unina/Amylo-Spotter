@@ -1,61 +1,61 @@
 """
-TEACHER KFOLD TRAIN - VERSIONE CON PROTEIN_CLASS
+TEACHER KFOLD TRAIN - VERSION WITH PROTEIN_CLASS
 =================================================
-Script completo per il training del teacher model con:
+Complete script for training the teacher model, with:
 
   1. TeacherModel (ProteinMLM_v2 + aggregation_head)
-  2. Loss di training: loss_aa + lambda_cl * loss_cl + lambda_agg * MSE(agg_score, 1-sasa_center) (theoretically should be like this loss_aa + lambda_cl * loss_cl)
-  3. Split con leave-one-PROTEIN-CLASS-out + stratificazione exposed/buried
-  4. Salvataggio checkpoint con metadati per generate_teacher_predictions.py
+  2. Training loss: loss_aa + lambda_cl * loss_cl + lambda_agg * MSE(agg_score, 1-sasa_center)
+     (theoretically should be like this: loss_aa + lambda_cl * loss_cl)
+  3. Split with leave-one-PROTEIN-CLASS-out + exposed/buried stratification
+  4. Checkpoint saving with metadata for generate_teacher_predictions.py
 
-🆕 NOVITÀ: Usa protein_class invece di PDB ID per il leave-one-out!
-    - Esclude TUTTE le strutture della stessa proteina (es. tutti i PDB di Tau, α-synuclein, etc.)
-    - Evita data leakage quando la stessa proteina ha più PDB
-    - Usa i veri nomi delle proteine (Tau, Amyloid-β, α-synuclein, etc.)
+NEW: Uses protein_class instead of PDB ID for the leave-one-out split!
+    - Excludes ALL structures of the same protein (e.g. every Tau PDB,
+      every alpha-synuclein PDB, etc.)
+    - Avoids data leakage when the same protein has multiple PDB entries
+    - Uses the real protein names (Tau, Amyloid-beta, alpha-synuclein, etc.)
 
-Uso:
-    # Prima crea il metadata con protein_class
+Usage:
+    # First build the metadata file with protein_class
     python create_metadata_from_npz_csv.py \
         --npz windows_all_local.npz \
         --csv windows_all.csv \
         --output proteins_metadata_with_class.json
     
-    # Poi addestra
-    python teacher_kfold_train_complete.py \
-        --data windows_all_local.npz \
-        --protein_metadata proteins_metadata_with_class.json \
-        --rotamer_csv rotamer_localmax_maxdens.csv \
-        --leave_out_protein_class "Tau" \
-        --outdir teachers/ \
-        --validation_mode all \
-        --k_folds 5 \
-        --epochs 200 \
-        --batch_size 32 \
-        --lr 1e-3 \
-        --weight_decay 1e-3 \
-        --grad_clip 1.0 \
-        --d_embed 256 \
-        --d_hidden 512 \
-        --lstm_layers 3 \
-        --dropout 0.25 \
-        --lambda_cl 1.0 \
-        --patience 35 \
-        --embed_dropout 0.3 \
-        --label_smoothing 0.08 \
-        --use_mixup \
-        --mixup_alpha 0.2 \
-        --sasa_threshold 0.123
 
-Esempi di protein_class valide:
+Examples of valid protein_class values:
     - Tau (2035 windows)
-    - α-synuclein (1234 windows)
+    - alpha-synuclein (1234 windows)
     - Prion Protein (837 windows)
-    - Amyloid-β(1-42) (501 windows)
+    - Amyloid-beta(1-42) (501 windows)
     - SOD1 (411 windows)
     - etc.
     
-    the best training parameter to obtain loss curves with no overftting
-     python teacher_kfold_train_complete.py     --data windows_all_local.npz     --protein_metadata proteins_metadata_with_class.json     --rotamer_csv rotamer_localmax_maxdens.csv     --leave_out_protein_class "α-synuclein"     --outdir teachers1/     --validation_mode all     --k_folds 5     --epochs 200     --batch_size 32     --lr 1e-3     --weight_decay 1e-3     --grad_clip 1.0     --d_embed 256     --d_hidden 512     --lstm_layers 3     --dropout 0.25     --lambda_cl 1.0     --patience 35     --embed_dropout 0.3     --label_smoothing 0.08     --use_mixup     --mixup_alpha 0.2     --sasa_threshold 0.123
+    Best training parameters found so far to obtain loss curves with no overfitting:
+     python teacher_kfold_train_complete.py /
+     --data windows_all_local.npz  /
+     --protein_metadata proteins_metadata_with_class.json   /
+     --rotamer_csv rotamer_localmax_maxdens.csv  /
+     --leave_out_protein_class "alpha-synuclein"   /
+     --outdir teachers1/   /
+     --validation_mode all   /
+     --k_folds 5  /
+     --epochs 200  /
+     --batch_size 32    /
+     --lr 1e-3  /
+     --weight_decay 1e-3   /
+     --grad_clip 1.0  /
+     --d_embed 256  /
+     --d_hidden 512   /
+     --lstm_layers 3    /
+     --dropout 0.25  /
+     --lambda_cl 1.0   /
+     --patience 35  /
+     --embed_dropout 0.3   /
+     --label_smoothing 0.08   /
+     --use_mixup   /
+     --mixup_alpha 0.2  /
+     --sasa_threshold 0.123
 """
 
 import torch
@@ -69,9 +69,9 @@ from torch.utils.data import DataLoader, Subset
 from collections import defaultdict
 import time
 
-# Import da topk_model2 (funzioni comuni)
+# Import from topk_model2 (shared functions)
 import sys
-# topk_model2.py / dataset.py vivono in ../ (model/), rotamer_library.py in ../../common
+# topk_model2.py / dataset.py live in ../ (model/), rotamer_library.py in ../../common
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent / "common"))
 
@@ -84,17 +84,35 @@ from topk_model2 import (
 from dataset import Windows3Dataset, collate_fn
 from rotamer_library import load_rotamer_library
 
-# Import del TeacherModel e target di aggregation
-# ProteinMLM_v2 gia' importato da topk_model2 sopra
+# Import of TeacherModel and the aggregation target
+# ProteinMLM_v2 is already imported from topk_model2 above
 
 
 # ============================================================
-# EVAL EPOCH (nessuna aggregation head — identico a kfold_train.py)
+# EVAL EPOCH (no aggregation head - identical to kfold_train.py)
 # ============================================================
 @torch.no_grad()
 def eval_epoch_teacher(model, loader, aa_to_n_clusters, device='cuda', ss_names=None,
                        lambda_cl=1.0, label_smoothing=0.08):
-    """Eval senza aggregation head — delega a eval_epoch_v2."""
+    """
+    Runs one evaluation epoch for the teacher model (no aggregation
+    head involved) by delegating directly to `eval_epoch_v2`.
+
+    Args:
+        model: The model to evaluate.
+        loader: DataLoader providing the evaluation batches.
+        aa_to_n_clusters: Dict mapping amino acid index to its number of
+            rotamer clusters (used to size/mask the cluster logits).
+        device: Torch device to run evaluation on (default: 'cuda').
+        ss_names: Optional dict mapping SS class index to a display name,
+            used for the per-secondary-structure breakdown.
+        lambda_cl: Weight applied to the cluster loss term.
+        label_smoothing: Label smoothing factor used in the loss.
+
+    Returns:
+        Whatever `eval_epoch_v2` returns: a dict of evaluation metrics
+        (losses, top-k accuracies, optionally per-SS statistics).
+    """
     return eval_epoch_v2(
         model, loader, aa_to_n_clusters,
         lambda_cl=lambda_cl, device=device,
@@ -102,13 +120,34 @@ def eval_epoch_teacher(model, loader, aa_to_n_clusters, device='cuda', ss_names=
     )
 
 
-# TRAIN EPOCH (nessuna aggregation head — identico a kfold_train.py)
+# TRAIN EPOCH (no aggregation head - identical to kfold_train.py)
 # ============================================================
 def train_epoch_teacher(model, loader, opt, aa_to_n_clusters,
                         lambda_cl=1.0, grad_clip=1.0,
                         device='cuda', label_smoothing=0.08,
                         use_mixup=False, mixup_alpha=0.2, ss_names=None):
-    """Train senza aggregation head — delega a train_epoch_v2."""
+    """
+    Runs one training epoch for the teacher model (no aggregation head
+    involved) by delegating directly to `train_epoch_v2`.
+
+    Args:
+        model: The model being trained.
+        loader: DataLoader providing the training batches.
+        opt: Optimizer used to update the model's parameters.
+        aa_to_n_clusters: Dict mapping amino acid index to its number of
+            rotamer clusters.
+        lambda_cl: Weight applied to the cluster loss term.
+        grad_clip: Max gradient norm for gradient clipping.
+        device: Torch device to train on (default: 'cuda').
+        label_smoothing: Label smoothing factor used in the loss.
+        use_mixup: Whether to apply mixup data augmentation.
+        mixup_alpha: Alpha parameter of the mixup Beta distribution.
+        ss_names: Optional dict mapping SS class index to a display name.
+
+    Returns:
+        Whatever `train_epoch_v2` returns: a dict of training metrics for
+        this epoch.
+    """
     return train_epoch_v2(
         model, loader, opt, aa_to_n_clusters,
         lambda_cl=lambda_cl, grad_clip=grad_clip, device=device,
@@ -119,35 +158,37 @@ def train_epoch_teacher(model, loader, opt, aa_to_n_clusters,
 
 
 # ============================================================
-# K-FOLD SPLIT con leave-one-protein-out
+# K-FOLD SPLIT with leave-one-protein-out
 # ============================================================
 def create_kfold_splits(dataset, k_folds=5, seed=42, validation_mode='all', 
                         sasa_threshold=0.1199, protein_metadata=None, 
                         leave_out_protein=None):
     """
-    Crea K fold splits con stratificazione exposed/buried.
+    Creates K-fold splits stratified by exposed/buried.
     
-    🆕 NOVITÀ: Se protein_metadata e leave_out_protein sono forniti,
-    esclude prima quella proteina dal pool (leave-one-out per KD),
-    poi stratifica exposed/buried sui fold rimanenti.
+    NEW: If protein_metadata and leave_out_protein are provided, that
+    protein is first excluded from the pool (legacy leave-one-out for
+    KD), and the exposed/buried stratification is then applied to the
+    remaining folds.
     
     Args:
-        dataset: Windows3Dataset o Subset (già filtrato)
-        k_folds: numero di fold
-        seed: random seed
-        validation_mode: 'all', 'exposed', o 'buried'
-        sasa_threshold: soglia SASA per definire exposed
-        protein_metadata: (OPZIONALE - deprecato) dict {window_idx: protein_id}
-        leave_out_protein: (OPZIONALE - deprecato) nome proteina da escludere
+        dataset: Windows3Dataset or Subset (already filtered).
+        k_folds: Number of folds.
+        seed: Random seed.
+        validation_mode: 'all', 'exposed', or 'buried'.
+        sasa_threshold: SASA threshold used to define "exposed".
+        protein_metadata: (OPTIONAL - deprecated) dict {window_idx: protein_id}.
+        leave_out_protein: (OPTIONAL - deprecated) name of the protein to
+            exclude.
     
     Returns:
-        List[(train_indices, val_indices)] per ogni fold
+        List[(train_indices, val_indices)] for each fold.
     """
-    # 🆕 NOTA: Se protein_metadata e leave_out_protein sono None,
-    # assume che il dataset sia già filtrato (nuovo comportamento)
+    # NOTE: If protein_metadata and leave_out_protein are None, the
+    # dataset is assumed to already be filtered (new behavior).
     
     if protein_metadata is not None and leave_out_protein is not None:
-        # Vecchio comportamento: filtra qui
+        # Legacy behavior: filter here
         valid_indices = set()
         for idx in range(len(dataset)):
             prot = protein_metadata.get(str(idx), "unknown")
@@ -155,19 +196,19 @@ def create_kfold_splits(dataset, k_folds=5, seed=42, validation_mode='all',
                 valid_indices.add(idx)
         
         print(f"\n[LEAVE-ONE-PROTEIN-OUT (legacy mode)]")
-        print(f"  Proteina esclusa: {leave_out_protein}")
-        print(f"  Pool originale: {len(dataset)} finestre")
-        print(f"  Pool dopo esclusione: {len(valid_indices)} finestre")
+        print(f"  Excluded protein: {leave_out_protein}")
+        print(f"  Original pool: {len(dataset)} windows")
+        print(f"  Pool after exclusion: {len(valid_indices)} windows")
     else:
-        # Nuovo comportamento: usa tutto il dataset (già filtrato)
+        # New behavior: use the whole dataset (already filtered)
         valid_indices = set(range(len(dataset)))
 
-    # Stratificazione exposed/buried sul pool valido
+    # Exposed/buried stratification over the valid pool
     exposed_indices = []
     buried_indices = []
     
     for i in range(len(dataset)):
-        if i not in valid_indices:  # 🆕 salta le finestre escluse
+        if i not in valid_indices:  # skip excluded windows
             continue
         
         sample = dataset[i]
@@ -271,17 +312,35 @@ def create_kfold_splits(dataset, k_folds=5, seed=42, validation_mode='all',
 
 
 # ============================================================
-# TRAIN SINGLE FOLD (con teacher model)
+# TRAIN SINGLE FOLD (with teacher model)
 # ============================================================
 def train_single_fold(fold_idx, train_indices, val_indices, 
                       dataset, test_loader, args, device, ss_names):
     """
-    Addestra un singolo fold del teacher model.
+    Trains a single fold of the teacher model.
     
-    🆕 DIFFERENZE rispetto a kfold_train.py:
-      1. Usa TeacherModel invece di ProteinMLM_v2
-      2. Chiama train_epoch_teacher invece di train_epoch_v2
-      3. Salva metadati aggiuntivi per la pipeline KD
+    DIFFERENCES from kfold_train.py:
+      1. Uses TeacherModel instead of plain ProteinMLM_v2
+      2. Calls train_epoch_teacher instead of train_epoch_v2
+      3. Saves extra metadata needed by the KD (knowledge distillation)
+         pipeline
+
+    Args:
+        fold_idx: Zero-based index of this fold.
+        train_indices: Indices (into `dataset`) used for training.
+        val_indices: Indices (into `dataset`) used for validation.
+        dataset: The training/validation dataset (or Subset) that
+            `train_indices`/`val_indices` index into.
+        test_loader: DataLoader for the fixed test set (the held-out
+            protein class), shared across all folds.
+        args: Parsed argparse Namespace with all training hyperparameters.
+        device: Torch device to train on.
+        ss_names: Dict mapping SS class index to a display name.
+
+    Returns:
+        dict with keys: 'fold_idx', 'fold_path' (checkpoint path),
+        'history' (per-epoch metrics), 'best_val_metrics',
+        'test_metrics', 'training_time' (seconds).
     """
     
     fold_start_time = time.time()
@@ -293,7 +352,7 @@ def train_single_fold(fold_idx, train_indices, val_indices,
     fold_outdir = Path(args.outdir) / f'teacher_{args.leave_out_protein_class}' / f'fold_{fold_idx + 1}'
     fold_outdir.mkdir(parents=True, exist_ok=True)
     
-    # Crea loaders
+    # Build loaders
     train_subset = Subset(dataset, train_indices.tolist())
     val_subset = Subset(dataset, val_indices.tolist())
     
@@ -311,8 +370,8 @@ def train_single_fold(fold_idx, train_indices, val_indices,
         collate_fn=collate_fn
     )
     
-    # 🆕 Inizializza TEACHER MODEL (non ProteinMLM_v2)
-    # Se dataset è un Subset, prendi il dataset originale
+    # Initialize the TEACHER MODEL (not plain ProteinMLM_v2)
+    # If dataset is a Subset, get the underlying original dataset
     base_dataset = dataset.dataset if hasattr(dataset, 'dataset') else dataset
     
     aa_to_n_clusters = base_dataset.get_aa_to_n_clusters()
@@ -342,7 +401,7 @@ def train_single_fold(fold_idx, train_indices, val_indices,
         min_lr=args.lr * 0.01
     )
     
-    # Training loop con early stopping
+    # Training loop with early stopping
     best_val_top5 = 0.0
     patience_counter = 0
     history = {
@@ -378,7 +437,7 @@ def train_single_fold(fold_idx, train_indices, val_indices,
 
         scheduler.step(epoch)
 
-        # Salva metriche nella history
+        # Save metrics into the history
         history['train_loss_aa'].append(train_metrics['loss_aa'])
         history['val_loss_aa'].append(val_metrics['loss_aa'])
         history['train_loss_cl'].append(train_metrics['loss_cl'])
@@ -389,12 +448,12 @@ def train_single_fold(fold_idx, train_indices, val_indices,
         history['val_top5_aa'].append(val_metrics['top5_aa'])
         history['val_top5_joint'].append(val_metrics.get('top5_joint', 0.0))
         
-        # Early stopping basato su top5_aa
+        # Early stopping based on top5_aa
         if val_metrics['top5_aa'] > best_val_top5:
             best_val_top5 = val_metrics['top5_aa']
             patience_counter = 0
             
-            # Salva checkpoint
+            # Save checkpoint
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
@@ -402,7 +461,7 @@ def train_single_fold(fold_idx, train_indices, val_indices,
                 'scheduler_state_dict': None,
                 'val_metrics': val_metrics,
                 'train_metrics': train_metrics,
-                # Metadati per generate_teacher_predictions.py
+                # Metadata for generate_teacher_predictions.py
                 'model_config': {
                     'n_aa': base_dataset.n_aa - 1,
                     'aa_to_n_clusters': aa_to_n_clusters,
@@ -425,7 +484,7 @@ def train_single_fold(fold_idx, train_indices, val_indices,
         else:
             patience_counter += 1
         
-        # Print progress ogni 10 epoch
+        # Print progress every 10 epochs
         if (epoch + 1) % 10 == 0:
             print(
                 f"Epoch {epoch+1:03d}/{args.epochs} | "
@@ -441,7 +500,7 @@ def train_single_fold(fold_idx, train_indices, val_indices,
             print(f"Early stopping at epoch {epoch+1}")
             break
     
-    # Test finale sul best model
+    # Final test on the best model
     checkpoint = torch.load(fold_outdir / 'best_model.pt', map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     
@@ -453,7 +512,7 @@ def train_single_fold(fold_idx, train_indices, val_indices,
     fold_elapsed = time.time() - fold_start_time
     fold_minutes, fold_seconds = divmod(fold_elapsed, 60)
     
-    print(f"\n✓ Fold {fold_idx + 1} completed in {int(fold_minutes)} min {fold_seconds:05.2f} s")
+    print(f"\nFold {fold_idx + 1} completed in {int(fold_minutes)} min {fold_seconds:05.2f} s")
     print(f"  Best Val Top-5: {best_val_top5:.4f}")
     print(f"  Test Top-5: {test_metrics['top5_aa']:.4f}")
     
@@ -471,7 +530,18 @@ def train_single_fold(fold_idx, train_indices, val_indices,
 # AGGREGATE RESULTS
 # ============================================================
 def aggregate_results(fold_results):
-    """Aggrega risultati di tutti i fold (con SS stats)"""
+    """
+    Aggregates the results of all folds (including per-SS statistics)
+    into mean/std summaries.
+
+    Args:
+        fold_results: List of per-fold result dicts, as returned by
+            `train_single_fold`.
+
+    Returns:
+        dict with keys 'validation', 'test', 'ss_stats'; each maps a
+        metric name to {'mean', 'std', 'values'} across folds.
+    """
     
     aggregated = {
         'validation': {},
@@ -479,7 +549,7 @@ def aggregate_results(fold_results):
         'ss_stats': {}
     }
     
-    # Metriche standard
+    # Standard metrics
     val_metrics = defaultdict(list)
     test_metrics = defaultdict(list)
     
@@ -531,7 +601,7 @@ def aggregate_results(fold_results):
 # PRINT FINAL RESULTS
 # ============================================================
 def print_final_results(aggregated):
-    """Stampa risultati finali con SS stats"""
+    """Prints the final aggregated results, including per-SS statistics."""
     
     print("\n" + "="*60)
     print("K-FOLD CROSS VALIDATION RESULTS (TEACHER)")
@@ -541,22 +611,22 @@ def print_final_results(aggregated):
     for metric in ['top1_aa', 'top5_aa', 'top10_aa', 'top20_aa']:
         if metric in aggregated['validation']:
             stats = aggregated['validation'][metric]
-            print(f"  {metric:15s}: {stats['mean']:.3f} ± {stats['std']:.3f} "
-                  f"({stats['mean']*100:.1f}% ± {stats['std']*100:.1f}%)")
+            print(f"  {metric:15s}: {stats['mean']:.3f} +/- {stats['std']:.3f} "
+                  f"({stats['mean']*100:.1f}% +/- {stats['std']*100:.1f}%)")
     
     print("\nTEST SET:")
     for metric in ['top1_aa', 'top5_aa', 'top10_aa', 'top20_aa', 
                    'top5_joint', 'top10_joint', 'acc_cl_given_true_aa']:
         if metric in aggregated['test']:
             stats = aggregated['test'][metric]
-            print(f"  {metric:25s}: {stats['mean']:.3f} ± {stats['std']:.3f} "
-                  f"({stats['mean']*100:.1f}% ± {stats['std']*100:.1f}%)")
+            print(f"  {metric:25s}: {stats['mean']:.3f} +/- {stats['std']:.3f} "
+                  f"({stats['mean']*100:.1f}% +/- {stats['std']*100:.1f}%)")
     
     
     # SS stats
     if aggregated.get('ss_stats'):
         print("\n" + "="*60)
-        print("📊 SECONDARY STRUCTURE STATISTICS (Test Set)")
+        print("SECONDARY STRUCTURE STATISTICS (Test Set)")
         print("="*60)
         
         for ss_name in sorted(aggregated['ss_stats'].keys()):
@@ -566,8 +636,8 @@ def print_final_results(aggregated):
             for metric in ['top1_aa', 'top5_aa', 'top10_aa', 'top5_joint']:
                 if metric in ss_dict:
                     stats = ss_dict[metric]
-                    print(f"    {metric:15s}: {stats['mean']:.3f} ± {stats['std']:.3f} "
-                          f"({stats['mean']*100:.1f}% ± {stats['std']*100:.1f}%)")
+                    print(f"    {metric:15s}: {stats['mean']:.3f} +/- {stats['std']:.3f} "
+                          f"({stats['mean']*100:.1f}% +/- {stats['std']*100:.1f}%)")
     
     print("="*60)
 
@@ -576,7 +646,19 @@ def print_final_results(aggregated):
 # MAIN K-FOLD CV
 # ============================================================
 def train_kfold_cv(args):
-    """Main K-Fold CV per teacher model"""
+    """
+    Main K-Fold CV routine for the teacher model, using the
+    leave-one-protein-class-out split: all windows belonging to
+    `args.leave_out_protein_class` are held out as the fixed test set,
+    and every other window is used for K-fold train/validation.
+
+    Args:
+        args: Parsed argparse Namespace with all training hyperparameters
+            (see the CLI argument definitions in `__main__` below).
+
+    Returns:
+        dict: The aggregated results, as returned by `aggregate_results`.
+    """
     
     total_start_time = time.time()
     
@@ -588,10 +670,10 @@ def train_kfold_cv(args):
     print(f"SASA threshold for exposed: {args.sasa_threshold}")
     print("="*60)
     
-    # Carica dati
+    # Load data
     rotlib = load_rotamer_library(args.rotamer_csv)
     
-    # Carica dataset completo
+    # Load the full dataset
     ds_full = Windows3Dataset(
         args.data, 
         rotamer_lib=rotlib, 
@@ -599,12 +681,12 @@ def train_kfold_cv(args):
         seed=args.seed
     )
     
-    # 🆕 Carica protein_metadata per leave-one-out (FORMATO CON protein_class)
+    # Load protein_metadata for the leave-one-out split (format with protein_class)
     with open(args.protein_metadata, 'r') as f:
         protein_metadata = json.load(f)
     
-    # Estrai protein_class da ogni entry
-    # Formato: {"0": {"pdb_id": "...", "protein_class_id": X, "protein_class": "Tau"}}
+    # Extract protein_class from each entry
+    # Format: {"0": {"pdb_id": "...", "protein_class_id": X, "protein_class": "Tau"}}
     protein_classes = {}
     for idx_str, metadata in protein_metadata.items():
         if isinstance(metadata, dict) and 'protein_class' in metadata:
@@ -613,14 +695,14 @@ def train_kfold_cv(args):
             raise ValueError(f"Metadata format error at index {idx_str}. Expected dict with 'protein_class' key.")
     
     unique_classes = sorted(set(protein_classes.values()))
-    print(f"Classi proteiche uniche nel dataset: {len(unique_classes)}")
+    print(f"Unique protein classes in the dataset: {len(unique_classes)}")
     if len(unique_classes) <= 20:
-        print(f"Classi: {unique_classes}")
+        print(f"Classes: {unique_classes}")
     else:
-        print(f"Classi (prime 10): {unique_classes[:10]}...")
-        print(f"       (ultime 5): {unique_classes[-5:]}")
+        print(f"Classes (first 10): {unique_classes[:10]}...")
+        print(f"       (last 5): {unique_classes[-5:]}")
     
-    # 🆕 Trova gli indici della PROTEIN CLASS da usare come test
+    # Find the indices of the PROTEIN CLASS to use as test set
     test_indices = []
     train_indices_pool = []
     
@@ -638,14 +720,14 @@ def train_kfold_cv(args):
     print(f"  Test windows: {len(test_indices)}")
     print(f"  Training pool: {len(train_indices_pool)}")
     
-    # 🆕 Crea train e test dataset usando Subset
+    # Build train and test datasets using Subset
     from torch.utils.data import Subset
     ds_train = Subset(ds_full, train_indices_pool)
     ds_test = Subset(ds_full, test_indices)
     
     # SS names
     ss_names = getattr(ds_full, 'ss_names', {i: f"SS_{i}" for i in range(8)})
-    print(f"\n📋 Secondary Structure Types: {ss_names}")
+    print(f"\nSecondary Structure Types: {ss_names}")
     
     test_loader = DataLoader(
         ds_test, 
@@ -654,20 +736,20 @@ def train_kfold_cv(args):
         collate_fn=collate_fn
     )
     
-    # 🆕 Create folds con leave-one-protein-out (ora il dataset è già filtrato)
-    # IMPORTANTE: Ora dobbiamo passare solo il ds_train che è già filtrato!
-    # Non serve più passare protein_metadata e leave_out_protein
+    # Create folds with leave-one-protein-out (the dataset is already filtered at this point)
+    # IMPORTANT: only ds_train (already filtered) needs to be passed here!
+    # protein_metadata and leave_out_protein no longer need to be passed
     folds = create_kfold_splits(
         ds_train, 
         k_folds=args.k_folds, 
         seed=args.seed,
         validation_mode=args.validation_mode,
         sasa_threshold=args.sasa_threshold,
-        protein_metadata=None,  # 🆕 Non più necessario
-        leave_out_protein=None  # 🆕 Non più necessario
+        protein_metadata=None,  # no longer needed here
+        leave_out_protein=None  # no longer needed here
     )
     
-    # Addestra ogni fold
+    # Train each fold
     fold_results = []
     
     for fold_idx, (train_indices, val_indices) in enumerate(folds):
@@ -677,10 +759,10 @@ def train_kfold_cv(args):
         )
         fold_results.append(result)
     
-    # Aggrega risultati
+    # Aggregate results
     aggregated = aggregate_results(fold_results)
     
-    # 🆕 Salva risultati sotto teacher_<protein_class>/
+    # Save results under teacher_<protein_class>/
     outdir = Path(args.outdir) / f"teacher_{args.leave_out_protein_class}"
     outdir.mkdir(parents=True, exist_ok=True)
     
@@ -706,19 +788,19 @@ def train_kfold_cv(args):
             }
         }, f, indent=2)
     
-    # Salva history di ogni fold
+    # Save the history of each fold
     for fold_idx, result in enumerate(fold_results):
         with open(outdir / f'fold_{fold_idx+1}_history.json', 'w') as f:
             json.dump(result['history'], f, indent=2)
     
-    # Trova e copia il modello migliore
+    # Find and copy the best model
     test_top5_scores = [r['test_metrics']['top5_aa'] for r in fold_results]
     best_fold_idx = test_top5_scores.index(max(test_top5_scores))
     best_fold_path = fold_results[best_fold_idx]['fold_path']
     
     shutil.copy(best_fold_path, outdir / 'best_teacher.pt')
     
-    # 🆕 Salva info del best model con metadati KD
+    # Save info about the best model, with metadata needed by the KD pipeline
     best_info = {
         'best_fold': best_fold_idx + 1,
         'best_test_top5_aa': test_top5_scores[best_fold_idx],
@@ -735,13 +817,13 @@ def train_kfold_cv(args):
     print_final_results(aggregated)
     
     print(f"\n{'='*60}")
-    print(f"✓ BEST MODEL: Fold {best_fold_idx + 1} (Test Top-5 = {test_top5_scores[best_fold_idx]:.4f})")
-    print(f"✓ Saved to: {outdir / 'best_teacher.pt'}")
+    print(f"BEST MODEL: Fold {best_fold_idx + 1} (Test Top-5 = {test_top5_scores[best_fold_idx]:.4f})")
+    print(f"Saved to: {outdir / 'best_teacher.pt'}")
     print(f"{'='*60}")
     
-    print(f"\n⏱️  TOTAL TRAINING TIME:")
+    print(f"\nTOTAL TRAINING TIME:")
     print(f"   {int(total_minutes)} min {total_seconds:05.2f} s (total: {total_elapsed:.1f} s)")
-    print(f"   Average per fold: {np.mean(fold_times):.1f} s ± {np.std(fold_times):.1f} s")
+    print(f"   Average per fold: {np.mean(fold_times):.1f} s +/- {np.std(fold_times):.1f} s")
     print("="*60)
     
     return aggregated
@@ -756,49 +838,72 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="K-Fold CV for Teacher Model (with Aggregation Head)")
     
     # Data
-    ap.add_argument("--data", required=True, help="Complete dataset (npz)")
-    ap.add_argument("--rotamer_csv", default="rotamer_localmax_maxdens.csv")
-    ap.add_argument("--outdir", default="teachers/")
+    ap.add_argument("--data", required=True, help="Path to the complete dataset (.npz file) to train and validate on.")
+    ap.add_argument("--rotamer_csv", default="rotamer_localmax_maxdens.csv",
+                    help="Path to the rotamer library CSV used to build/validate cluster assignments (default: rotamer_localmax_maxdens.csv).")
+    ap.add_argument("--outdir", default="teachers/",
+                    help="Directory where checkpoints, histories, and result files will be written (default: teachers/).")
     
-    # 🆕 Teacher / KD specifici
+    # Teacher / KD specific arguments
     ap.add_argument("--protein_metadata", required=True,
-                    help="JSON mapping {window_idx: {pdb_id, protein_class_id, protein_class}}")
+                    help="Path to a JSON file mapping {window_idx: {pdb_id, protein_class_id, protein_class}}, "
+                         "as produced by create_metadata_from_npz_csv.py.")
     ap.add_argument("--leave_out_protein_class", required=True,
-                    help="Protein class da escludere dal training. Esempi: 'Tau', 'α-synuclein', 'Amyloid-β(1-42)', 'SOD1', etc.")
+                    help="Protein class to exclude from training and use as the fixed test set. "
+                         "Examples: 'Tau', 'alpha-synuclein', 'Amyloid-beta(1-42)', 'SOD1', etc.")
     
     # K-Fold
-    ap.add_argument("--k_folds", type=int, default=5)
+    ap.add_argument("--k_folds", type=int, default=5,
+                    help="Number of cross-validation folds (default: 5).")
     ap.add_argument("--validation_mode", type=str, default='all',
-                    choices=['all', 'exposed', 'buried'])
+                    choices=['all', 'exposed', 'buried'],
+                    help="Which residues to include in the validation split: 'all', 'exposed' only, or 'buried' only (default: all).")
     ap.add_argument("--sasa_threshold", type=float, default=0.1199,
                     help="SASA threshold to define exposed residues")
     
     # Training
-    ap.add_argument("--epochs", type=int, default=200)
-    ap.add_argument("--batch_size", type=int, default=32)
-    ap.add_argument("--lr", type=float, default=1e-3)
-    ap.add_argument("--weight_decay", type=float, default=1e-3)
-    ap.add_argument("--grad_clip", type=float, default=1.0)
-    ap.add_argument("--patience", type=int, default=35)
+    ap.add_argument("--epochs", type=int, default=200,
+                    help="Maximum number of training epochs per fold (default: 200).")
+    ap.add_argument("--batch_size", type=int, default=32,
+                    help="Number of windows per training/evaluation batch (default: 32).")
+    ap.add_argument("--lr", type=float, default=1e-3,
+                    help="Initial learning rate for the AdamW optimizer (default: 1e-3).")
+    ap.add_argument("--weight_decay", type=float, default=1e-3,
+                    help="Weight decay (L2 regularization) for the AdamW optimizer (default: 1e-3).")
+    ap.add_argument("--grad_clip", type=float, default=1.0,
+                    help="Maximum gradient norm for gradient clipping (default: 1.0).")
+    ap.add_argument("--patience", type=int, default=35,
+                    help="Number of epochs without validation improvement before early stopping (default: 35).")
     
     # Model
-    ap.add_argument("--d_embed", type=int, default=256)
-    ap.add_argument("--d_hidden", type=int, default=512)
-    ap.add_argument("--lstm_layers", type=int, default=3)
-    ap.add_argument("--dropout", type=float, default=0.25)
+    ap.add_argument("--d_embed", type=int, default=256,
+                    help="Embedding dimension for amino acid/position/SS features (default: 256).")
+    ap.add_argument("--d_hidden", type=int, default=512,
+                    help="Hidden dimension of the LSTM/model layers (default: 512).")
+    ap.add_argument("--lstm_layers", type=int, default=3,
+                    help="Number of stacked LSTM layers in the model (default: 3).")
+    ap.add_argument("--dropout", type=float, default=0.25,
+                    help="Dropout probability applied within the model (default: 0.25).")
     ap.add_argument("--lambda_cl", type=float, default=1.0,
                     help="Weight for cluster loss")
     
     # Anti-overfitting
-    ap.add_argument("--embed_dropout", type=float, default=0.3)
-    ap.add_argument("--label_smoothing", type=float, default=0.08)
-    ap.add_argument("--use_mixup", action="store_true")
-    ap.add_argument("--mixup_alpha", type=float, default=0.2)
-    ap.add_argument("--warmup_epochs", type=int, default=5)
+    ap.add_argument("--embed_dropout", type=float, default=0.3,
+                    help="Dropout probability applied to the input embeddings (default: 0.3).")
+    ap.add_argument("--label_smoothing", type=float, default=0.08,
+                    help="Label smoothing factor applied to the classification losses (default: 0.08).")
+    ap.add_argument("--use_mixup", action="store_true",
+                    help="Enable mixup data augmentation during training.")
+    ap.add_argument("--mixup_alpha", type=float, default=0.2,
+                    help="Alpha parameter of the mixup Beta distribution, used only if --use_mixup is set (default: 0.2).")
+    ap.add_argument("--warmup_epochs", type=int, default=5,
+                    help="Number of learning-rate warmup epochs before the cosine schedule begins (default: 5).")
     
     # Other
-    ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--cpu", action="store_true")
+    ap.add_argument("--seed", type=int, default=42,
+                    help="Random seed used for reproducibility (data splits, model init, mixup, etc.) (default: 42).")
+    ap.add_argument("--cpu", action="store_true",
+                    help="Force training on CPU even if a CUDA GPU is available.")
     
     args = ap.parse_args()
     
