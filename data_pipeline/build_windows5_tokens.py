@@ -1,4 +1,16 @@
-#python build_windows5_tokens_with_pdb_protein.py --input /mnt/user-data/uploads/windows_all.csv --output windows5_tokens.npz legge solo json
+#python build_windows5_tokens_with_pdb_protein.py --input /mnt/user-data/uploads/windows_all.csv --output windows5_tokens.npz  (reads only .json files, despite the --input example above)
+"""
+Build token arrays (amino acid, cluster, SASA, secondary structure,
+protein class, PDB ID, window position) from a set of 5-residue-window
+JSON files, and save them as a single compressed .npz file plus a set of
+JSON mapping files describing how each categorical value was encoded.
+
+Usage:
+    python build_windows5_tokens_with_pdb_protein.py \
+        --input /path/to/windows_or_folder \
+        --output windows5_tokens.npz \
+        [--include_meta]
+"""
 import argparse, os, glob, json, numpy as np
 
 AA3_to_1 = {
@@ -6,15 +18,16 @@ AA3_to_1 = {
     "HIS":"H","ILE":"I","LEU":"L","LYS":"K","MET":"M","PHE":"F","PRO":"P","SER":"S",
     "THR":"T","TRP":"W","TYR":"Y","VAL":"V"
 }
-AA1_order = list("ACDEFGHIKLMNPQRSTVWY")  # Alfabetico come rotamer_library!
+AA1_order = list("ACDEFGHIKLMNPQRSTVWY")  # Alphabetical order, same as rotamer_library!
 AA1_to_id = {aa:i for i,aa in enumerate(AA1_order)}    # 0..19
 AA3_to_id = {k: AA1_to_id[v] for k,v in AA3_to_1.items()}
 
 POS_LIST = [-2, -1, 0, 1, 2]
 POS_MAP  = {-2:0, -1:1, 0:2, 1:3, 2:4}
 
-# 🆕 MAPPING SECONDARY STRUCTURE
-# Mappa caratteri SS comuni (verrà usata come fallback)
+# SECONDARY STRUCTURE MAPPING
+# Maps common DSSP SS characters to a normalized set (used as a fallback
+# whenever a character outside this table is encountered).
 SS_COMMON_MAP = {
     'H': 'H',  # Helix
     'G': 'G',  # 3-10 helix
@@ -24,21 +37,49 @@ SS_COMMON_MAP = {
     'T': 'T',  # Turn
     'S': 'S',  # Bend
     'C': 'C',  # Coil
-    '-': 'C',  # Unknown → Coil
-    ' ': 'C',  # Empty → Coil
-    None: 'C'  # Missing → Coil
+    '-': 'C',  # Unknown -> Coil
+    ' ': 'C',  # Empty -> Coil
+    None: 'C'  # Missing -> Coil
 }
 
 
 def parse_args():
+    """
+    Defines and parses the command-line arguments for this script.
+
+    Command-line arguments:
+        --input        Path to a single .json window file, or to a folder
+                        that will be searched recursively for .json files.
+                        Required.
+        --output       Path to the .npz file that will be written with the
+                        encoded token arrays. Required.
+        --include_meta Optional flag. If set, also saves a companion
+                        "<output_dir>/windows5_meta.npz" file containing,
+                        for each window, its PDB id, face, and strand start
+                        position (useful for tracing a token back to its
+                        source window).
+
+    Returns:
+        argparse.Namespace with attributes `input`, `output`, `include_meta`.
+    """
     ap = argparse.ArgumentParser(description="Build token arrays from 5-residue windows JSONs with SASA, SS, PDB_ID, and PROTEIN_CLASS.")
-    ap.add_argument("--input", required=True, help="File .json o cartella con file .json (ricorsivo).")
-    ap.add_argument("--output", required=True, help="Percorso del file .npz in output.")
-    ap.add_argument("--include_meta", action="store_true", help="Salva anche meta (pdb, face, strand_start).")
+    ap.add_argument("--input", required=True, help="A single .json window file, or a folder containing .json window files (searched recursively).")
+    ap.add_argument("--output", required=True, help="Path to the output .npz file that will hold the encoded token arrays.")
+    ap.add_argument("--include_meta", action="store_true", help="Also save per-window metadata (pdb, face, strand_start) to a companion windows5_meta.npz file.")
     return ap.parse_args()
 
 def iter_json_files(root):
-    """Itera sui file JSON. Se root è un file, ritorna solo quello."""
+    """
+    Iterates over JSON files under `root`.
+
+    Args:
+        root: Path to a single .json file, or to a directory to search
+            recursively for .json files.
+
+    Yields:
+        Paths to each .json file found. If `root` is itself a .json file,
+        yields only that path.
+    """
     if os.path.isfile(root) and root.endswith('.json'):
         yield root
         return
@@ -52,7 +93,18 @@ def iter_json_files(root):
                 yield p
 
 def extract_windows5_from_json(path):
-    """Legge un file JSON che contiene una lista di finestre."""
+    """
+    Reads a JSON file expected to contain a list of window dicts, and
+    returns only the ones that describe a 5-residue window.
+
+    Args:
+        path: Path to the JSON file to read.
+
+    Returns:
+        List of window dicts (each with a "residues" list of length 5).
+        Returns an empty list if the file cannot be read/parsed, or
+        contains no valid 5-residue windows.
+    """
     try:
         with open(path, "r") as f:
             data = json.load(f)
@@ -70,7 +122,18 @@ def extract_windows5_from_json(path):
     return wins
 
 def parse_sasa_value(sasa_val):
-    """Converte il valore SASA/ACC_norm in float, gestendo valori mancanti."""
+    """
+    Converts a SASA/ACC_norm value to a float, clamped to [0, 1], handling
+    missing or malformed values.
+
+    Args:
+        sasa_val: Raw SASA/ACC_norm value from the input JSON (may be a
+            number, string, or None).
+
+    Returns:
+        float in the range [0.0, 1.0]. Returns 0.0 if the value is missing
+        or cannot be converted to a number.
+    """
     if sasa_val is None:
         return 0.0
     try:
@@ -81,55 +144,67 @@ def parse_sasa_value(sasa_val):
 
 def parse_ss_value(ss_val):
     """
-    🆕 Normalizza il valore SS (stringa DSSP) mantenendo il carattere originale.
-    
+    Normalizes a secondary-structure (SS) value coming from DSSP, keeping
+    the original character where possible.
+
     Args:
-        ss_val: carattere SS ('H', 'E', 'C', etc.) o None
-    
+        ss_val: SS character ('H', 'E', 'C', etc.) or None.
+
     Returns:
-        str: carattere SS normalizzato
+        str: A single normalized SS character (one of the keys/values in
+            SS_COMMON_MAP; defaults to 'C' for missing/unrecognized input).
     """
     if ss_val is None or ss_val == '':
         return 'C'  # Default: Coil
     
-    # Prendi solo il primo carattere se è una stringa
+    # Take only the first character if it's a string
     ss_char = str(ss_val).strip().upper()[0] if ss_val else 'C'
     
-    # Normalizza caratteri non standard
+    # Normalize non-standard characters
     return SS_COMMON_MAP.get(ss_char, 'C')
 
 def build_ss_mapping(ss_chars):
     """
-    🆕 Costruisce automaticamente il mapping SS dai caratteri trovati nei dati.
-    
+    Automatically builds the SS -> integer-index mapping from the set of
+    SS characters actually observed in the data.
+
     Args:
-        ss_chars: set di caratteri SS unici trovati
-    
+        ss_chars: Set of unique SS characters found in the dataset.
+
     Returns:
-        tuple: (ss_to_idx dict, unique_ss_list)
+        tuple:
+            ss_to_idx (dict): Maps each SS character to an integer index.
+            unique_ss_list (list): Sorted list of the SS characters used,
+                in the same order as their assigned indices.
     """
-    # Rimuovi None e ordina alfabeticamente per consistenza
+    # Drop None and sort alphabetically for a consistent, reproducible mapping
     unique_ss = sorted([s for s in ss_chars if s is not None and s != ''])
     
-    # Crea mapping: carattere -> indice
+    # Build mapping: character -> index
     ss_to_idx = {ss_char: idx for idx, ss_char in enumerate(unique_ss)}
     
     return ss_to_idx, unique_ss
 
 def build_protein_class_mapping(protein_classes):
     """
-    🆕 Costruisce mapping automatico per le classi di proteine.
-    
+    Automatically builds the protein-class -> integer-index mapping from
+    the set of protein class names actually observed in the data.
+
     Args:
-        protein_classes: set di nomi di classi di proteine
-    
+        protein_classes: Set of unique protein class names found in the
+            dataset.
+
     Returns:
-        tuple: (class_to_idx dict, unique_classes_list)
+        tuple:
+            class_to_idx (dict): Maps each protein class name to an
+                integer index.
+            unique_classes_list (list): Sorted list of protein class
+                names, in the same order as their assigned indices.
     """
-    # Ordina alfabeticamente per consistenza
+    # Sort alphabetically for a consistent, reproducible mapping
     unique_classes = sorted([c for c in protein_classes if c is not None and c != ''])
     
-    # Crea mapping: nome classe -> indice
+    # Build mapping: class name -> index
     class_to_idx = {class_name: idx for idx, class_name in enumerate(unique_classes)}
     
     return class_to_idx, unique_classes
@@ -148,9 +223,9 @@ def main():
             all_windows.extend(w)
 
     if not all_windows:
-        raise SystemExit("Nessuna finestra da 5 residui trovata. Controlla la cartella di input.")
+        raise SystemExit("No 5-residue windows found. Check the input path.")
 
-    # 🆕 FASE 1: Scansione per trovare tutte le classi SS uniche E le protein classes
+    # PHASE 1: Scan to find all unique SS classes AND protein classes
     print("="*60)
     print("PHASE 1: Scanning for unique classes...")
     print("="*60)
@@ -165,7 +240,7 @@ def main():
     for w in all_windows:
         residues = w["residues"]
         
-        # 🆕 Raccogli protein_class e pdb_id
+        # Collect protein_class and pdb_id
         protein_class = w.get("protein_class", None)
         pdb_id = w.get("pdb", None)
         
@@ -187,7 +262,7 @@ def main():
             
             unique_ss_chars.add(ss_char)
     
-    # 🆕 Costruisci mapping automatici
+    # Build automatic mappings
     ss_to_idx, unique_ss_list = build_ss_mapping(unique_ss_chars)
     n_ss_classes = len(ss_to_idx)
     
@@ -210,7 +285,7 @@ def main():
     for class_name, idx in sorted(protein_class_to_idx.items()):
         print(f"  '{class_name}' -> {idx}")
     
-    # 🆕 FASE 2: Build arrays con i mapping costruiti
+    # PHASE 2: Build arrays using the mappings just built
     print("\n" + "="*60)
     print("PHASE 2: Building arrays...")
     print("="*60)
@@ -218,9 +293,9 @@ def main():
     aa_list = []
     cl_list = []
     sasa_list = []
-    ss_list = []  # 🆕 Lista per Secondary Structure
-    protein_class_list = []  # 🆕 Lista per Protein Class ID
-    pdb_id_list = []  # 🆕 Lista per PDB ID
+    ss_list = []  # List for Secondary Structure
+    protein_class_list = []  # List for Protein Class ID
+    pdb_id_list = []  # List for PDB ID
     pos_list = []
     meta_list = []
 
@@ -230,11 +305,11 @@ def main():
         if not all(p in POS_MAP for p in pos_vals):
             pos_vals = POS_LIST
 
-        # 🆕 Estrai protein_class e pdb_id dalla finestra
+        # Extract protein_class and pdb_id from the window
         protein_class = w.get("protein_class", None)
         pdb_id = w.get("pdb", "")
         
-        # Converti protein_class in ID numerico (-1 se mancante)
+        # Convert protein_class to a numeric ID (-1 if missing)
         if protein_class and protein_class in protein_class_to_idx:
             protein_class_id = protein_class_to_idx[protein_class]
         else:
@@ -243,7 +318,7 @@ def main():
         aa_ids = []
         cl_ids = []
         sasa_vals = []
-        ss_vals = []  # 🆕 Valori SS per questa finestra
+        ss_vals = []  # SS values for this window
         
         for r in residues:
             aa3 = str(r.get("AA","")).upper()
@@ -256,22 +331,22 @@ def main():
             sasa_val = r.get("ACC_norm", r.get("sasa", None))
             sasa_val = parse_sasa_value(sasa_val)
             
-            # 🆕 SECONDARY STRUCTURE
+            # SECONDARY STRUCTURE
             ss_val = r.get("ss", r.get("SS", r.get("secondary_structure", r.get("dssp", None))))
             ss_char = parse_ss_value(ss_val)
-            ss_id = ss_to_idx[ss_char]  # Converti a indice
+            ss_id = ss_to_idx[ss_char]  # Convert to index
             
             aa_ids.append(aa_id)
             cl_ids.append(int(clid))
             sasa_vals.append(sasa_val)
-            ss_vals.append(ss_id)  # 🆕 Aggiungi SS
+            ss_vals.append(ss_id)  # Append SS
 
         aa_list.append(aa_ids)
         cl_list.append(cl_ids)
         sasa_list.append(sasa_vals)
-        ss_list.append(ss_vals)  # 🆕
-        protein_class_list.append(protein_class_id)  # 🆕
-        pdb_id_list.append(pdb_id)  # 🆕
+        ss_list.append(ss_vals)
+        protein_class_list.append(protein_class_id)
+        pdb_id_list.append(pdb_id)
         pos_list.append(pos_vals)
 
         if args.include_meta:
@@ -280,9 +355,9 @@ def main():
     aa_arr = np.array(aa_list, dtype=np.int16)
     cl_arr = np.array(cl_list, dtype=np.int64)
     sasa_arr = np.array(sasa_list, dtype=np.float32)
-    ss_arr = np.array(ss_list, dtype=np.int8)  # 🆕 Array SS
-    protein_class_arr = np.array(protein_class_list, dtype=np.int16)  # 🆕 Array Protein Class
-    pdb_id_arr = np.array(pdb_id_list, dtype=object)  # 🆕 Array PDB ID (stringhe)
+    ss_arr = np.array(ss_list, dtype=np.int8)  # SS array
+    protein_class_arr = np.array(protein_class_list, dtype=np.int16)  # Protein Class array
+    pdb_id_arr = np.array(pdb_id_list, dtype=object)  # PDB ID array (strings)
     pos_arr = np.array(pos_list, dtype=np.int16)
 
     # Remap cluster ids
@@ -293,15 +368,15 @@ def main():
     # Remap positions
     pos_idx = np.vectorize(lambda x: POS_MAP[int(x)])(pos_arr).astype(np.int8)
 
-    # 🆕 Save NPZ con SS, Protein Class e PDB ID
+    # Save NPZ with SS, Protein Class and PDB ID
     np.savez_compressed(
         out_npz,
         aa_ids=aa_arr,
         cluster_idx=cl_idx,
         sasa=sasa_arr,
-        ss=ss_arr,                      # 🆕 Campo Secondary Structure
-        protein_class_id=protein_class_arr,  # 🆕 Campo Protein Class ID
-        pdb_id=pdb_id_arr,             # 🆕 Campo PDB ID
+        ss=ss_arr,                           # Secondary Structure field
+        protein_class_id=protein_class_arr,  # Protein Class ID field
+        pdb_id=pdb_id_arr,                   # PDB ID field
         pos_idx=pos_idx,
     )
 
@@ -313,10 +388,10 @@ def main():
     with open(os.path.join(out_dir, "aa_id_mapping.json"), "w") as f:
         json.dump({
             "AA1_order": AA1_order,
-            "note": "IDs run from 0..19; aminoacidi in ordine alfabetico."
+            "note": "IDs run from 0..19; amino acids in alphabetical order."
         }, f, indent=2)
     
-    # 🆕 Save SS mapping
+    # Save SS mapping
     idx_to_ss = {v: k for k, v in ss_to_idx.items()}
     with open(os.path.join(out_dir, "ss_mapping.json"), "w") as f:
         json.dump({
@@ -328,7 +403,7 @@ def main():
             "note": f"Auto-detected {n_ss_classes} SS classes from data"
         }, f, indent=2)
     
-    # 🆕 Save Protein Class mapping
+    # Save Protein Class mapping
     idx_to_protein_class = {v: k for k, v in protein_class_to_idx.items()}
     with open(os.path.join(out_dir, "protein_class_mapping.json"), "w") as f:
         json.dump({
@@ -347,18 +422,18 @@ def main():
 
     # Statistics
     print(f"\n{'='*60}")
-    print(f"Salvato: {out_npz}")
+    print(f"Saved: {out_npz}")
     print(f"{'='*60}")
-    print(f"Finestre N = {aa_arr.shape[0]}, cluster K = {len(unique_clusters)}")
+    print(f"Windows N = {aa_arr.shape[0]}, clusters K = {len(unique_clusters)}")
     
-    print(f"\n📊 SASA statistics:")
+    print(f"\nSASA statistics:")
     print(f"  Min:    {sasa_arr.min():.4f}")
     print(f"  Max:    {sasa_arr.max():.4f}")
     print(f"  Mean:   {sasa_arr.mean():.4f}")
     print(f"  Median: {np.median(sasa_arr):.4f}")
     
-    # 🆕 SS statistics
-    print(f"\n🧬 SECONDARY STRUCTURE statistics:")
+    # SS statistics
+    print(f"\nSECONDARY STRUCTURE statistics:")
     print(f"  Type: auto-detected")
     print(f"  Classes: {n_ss_classes}")
     print(f"  Missing SS values: {ss_missing_count}/{total_residues} ({ss_missing_count/total_residues*100:.1f}%)")
@@ -370,8 +445,8 @@ def main():
         percentage = count / ss_arr.size * 100
         print(f"    Class {ss_idx} ('{ss_char}'): {count:6d} ({percentage:5.1f}%)")
     
-    # 🆕 Protein Class statistics
-    print(f"\n🧪 PROTEIN CLASS statistics:")
+    # Protein Class statistics
+    print(f"\nPROTEIN CLASS statistics:")
     print(f"  Type: auto-detected")
     print(f"  Classes: {n_protein_classes}")
     print(f"  Missing protein_class values: {protein_class_missing_count}/{len(all_windows)} ({protein_class_missing_count/len(all_windows)*100:.1f}%)")
@@ -386,13 +461,13 @@ def main():
         percentage = count / protein_class_arr.size * 100
         print(f"    Class {pc_idx:3d} ('{pc_name}'): {count:6d} ({percentage:5.1f}%)")
     
-    # 🆕 PDB ID statistics
-    print(f"\n🔬 PDB ID statistics:")
+    # PDB ID statistics
+    print(f"\nPDB ID statistics:")
     unique_pdbs = set(pdb_id_arr)
     print(f"  Unique PDB IDs: {len(unique_pdbs)}")
     print(f"  Missing PDB IDs: {pdb_missing_count}/{len(all_windows)} ({pdb_missing_count/len(all_windows)*100:.1f}%)")
     
-    print(f"\n✅ Mapping salvati in: {out_dir}")
+    print(f"\nMappings saved in: {out_dir}")
     print("="*60)
 
 if __name__ == "__main__":
