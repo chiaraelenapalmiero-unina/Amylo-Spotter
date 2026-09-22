@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Script per convertire cluster da indici GLOBALI (0-97) a LOCALI (0-N per ogni AA).
-Versione aggiornata per dataset con SASA continua e SS (Secondary Structure).
+Script to convert cluster indices from GLOBAL (0-97) to LOCAL (0-N for
+each amino acid).
+Updated version for datasets with continuous SASA and SS (Secondary
+Structure) fields.
 
-Uso:
+Usage:
     python convert_global_to_local_clusters.py \
         --input ./windows_all.npz \
         --output ./windows_all_local.npz \
@@ -16,26 +18,39 @@ import sys
 import numpy as np
 from pathlib import Path
 
-# rotamer_library.py vive in ../common (dipendenza condivisa con model/)
+# rotamer_library.py lives in ../common (a dependency shared with model/)
 sys.path.append(str(Path(__file__).resolve().parent.parent / "common"))
 from rotamer_library import load_rotamer_library, AA20
 
 def convert_global_to_local(aa_ids, cluster_global, rotamer_lib):
     """
-    Converte cluster da indici globali a locali.
-    
+    Converts cluster indices from global to local.
+
     Args:
-        aa_ids: array [N, L] con indici aminoacidi
-        cluster_global: array [N, L] con indici cluster GLOBALI (0-97)
-        rotamer_lib: istanza di RotamerLibrary
-    
+        aa_ids: Array of shape [N, L] with amino acid indices.
+        cluster_global: Array of shape [N, L] with GLOBAL cluster indices
+            (0-97).
+        rotamer_lib: A RotamerLibrary instance, used to look up which
+            global index corresponds to which (AA, local cluster) pair.
+
     Returns:
-        cluster_local: array [N, L] con indici cluster LOCALI (0-n per ogni AA)
-        conversion_stats: dict con statistiche
+        cluster_local: Array of shape [N, L] with LOCAL cluster indices
+            (0-n for each amino acid).
+        conversion_stats: Dict with conversion statistics:
+            'total'     - total number of (residue) positions processed
+            'converted' - positions successfully mapped from a known
+                          global index to its local index
+            'invalid'   - positions whose global index did not match any
+                          known (AA, cluster) pair for that AA; these are
+                          mapped with a modulo fallback (see below)
+            'unchanged' - reserved counter, currently always 0
+            'mask'      - positions skipped because they are MASK tokens
+                          (AA index >= 20) or a MASK cluster (global index
+                          >= 15)
     """
     cluster_local = cluster_global.copy()
     
-    # Statistiche conversione
+    # Conversion statistics
     stats = {
         'total': 0,
         'converted': 0,
@@ -53,36 +68,36 @@ def convert_global_to_local(aa_ids, cluster_global, rotamer_lib):
             aa_idx = int(aa_ids[i, j])
             cl_global = int(cluster_global[i, j])
             
-            # Salta MASK tokens (AA >= 20)
+            # Skip MASK tokens (AA >= 20)
             if aa_idx >= 20:
                 stats['mask'] += 1
                 continue
             
-            # Salta cluster MASK (assumiamo che cluster molto alti siano mask)
-            if cl_global >= 15:  # Threshold ragionevole
+            # Skip MASK clusters (we assume very high cluster indices are mask tokens)
+            if cl_global >= 15:  # Reasonable threshold
                 stats['mask'] += 1
                 continue
             
-            # Cerca se questo cluster globale corrisponde a questo AA
-            # nella libreria di rotameri
+            # Check whether this global cluster corresponds to this AA
+            # in the rotamer library
             found = False
             
             for local_idx in range(rotamer_lib.get_n_clusters(aa_idx)):
                 global_idx = rotamer_lib.pair_to_global.get((aa_idx, local_idx), -1)
                 
                 if global_idx == cl_global:
-                    # Trovato! Converti
+                    # Found it! Convert.
                     cluster_local[i, j] = local_idx
                     stats['converted'] += 1
                     found = True
                     break
             
             if not found:
-                # Non trovato - questo cluster globale non appartiene a questo AA
-                # Prova a mapparlo comunque prendendo il resto
+                # Not found - this global cluster does not belong to this AA.
+                # Try to map it anyway using the remainder.
                 n_clusters = rotamer_lib.get_n_clusters(aa_idx)
                 if n_clusters > 0:
-                    # Fallback: mappa con modulo
+                    # Fallback: map using modulo
                     local_fallback = cl_global % n_clusters
                     cluster_local[i, j] = local_fallback
                     stats['invalid'] += 1
@@ -94,7 +109,19 @@ def convert_global_to_local(aa_ids, cluster_global, rotamer_lib):
 
 def verify_conversion(aa_ids, cluster_local, rotamer_lib):
     """
-    Verifica che dopo la conversione tutte le coppie siano valide.
+    Verifies that, after conversion, every (AA, local cluster) pair in
+    the dataset is a valid pair according to the rotamer library.
+
+    Args:
+        aa_ids: Array of shape [N, L] with amino acid indices.
+        cluster_local: Array of shape [N, L] with LOCAL cluster indices,
+            as produced by `convert_global_to_local`.
+        rotamer_lib: A RotamerLibrary instance used to check validity.
+
+    Returns:
+        tuple (valid_count, invalid_count): Number of non-masked
+        positions whose (AA, cluster) pair is valid / invalid. Prints the
+        first 5 invalid pairs found, as a warning, for quick debugging.
     """
     N, L = aa_ids.shape
     invalid_count = 0
@@ -105,7 +132,7 @@ def verify_conversion(aa_ids, cluster_local, rotamer_lib):
             aa_idx = int(aa_ids[i, j])
             cl_idx = int(cluster_local[i, j])
             
-            # Salta MASK
+            # Skip MASK
             if aa_idx >= 20:
                 continue
             
@@ -114,9 +141,9 @@ def verify_conversion(aa_ids, cluster_local, rotamer_lib):
                 valid_count += 1
             else:
                 invalid_count += 1
-                if invalid_count <= 5:  # Stampa primi 5
+                if invalid_count <= 5:  # Print only the first 5
                     aa_name = AA20[aa_idx] if aa_idx < 20 else "?"
-                    print(f"  ⚠️  Still invalid: AA={aa_idx} ({aa_name}), cluster={cl_idx}, "
+                    print(f"  [WARN] Still invalid: AA={aa_idx} ({aa_name}), cluster={cl_idx}, "
                           f"valid={valid_clusters}")
     
     return valid_count, invalid_count
@@ -124,7 +151,12 @@ def verify_conversion(aa_ids, cluster_local, rotamer_lib):
 
 def analyze_ss_distribution(ss_ids):
     """
-    Analizza la distribuzione della struttura secondaria nel dataset.
+    Analyzes and prints the distribution of secondary-structure classes
+    in the dataset.
+
+    Args:
+        ss_ids: Array of integer SS class ids (any shape; flattened for
+            the count).
     """
     ss_names = {
         0: 'Helix', 1: 'Strand', 2: 'Coil', 3: 'Bend',
@@ -144,30 +176,30 @@ def analyze_ss_distribution(ss_ids):
 
 def main():
     parser = argparse.ArgumentParser(description="Convert cluster indices from global to local (with SS support)")
-    parser.add_argument("--input", required=True, help="Input NPZ file")
-    parser.add_argument("--output", required=True, help="Output NPZ file")
+    parser.add_argument("--input", required=True, help="Path to the input .npz file (must contain at least 'aa_ids' and 'cluster_idx' arrays with GLOBAL cluster indices).")
+    parser.add_argument("--output", required=True, help="Path to the output .npz file to write, identical to the input but with 'cluster_idx' converted to LOCAL indices.")
     parser.add_argument("--rotamer_csv", default="rotamer_localmax_maxdens.csv", 
-                       help="Rotamer library CSV")
+                       help="Path to the rotamer library CSV file used to look up valid (AA, cluster) pairs (default: rotamer_localmax_maxdens.csv).")
     parser.add_argument("--verify", action="store_true", 
-                       help="Verify conversion after completion")
+                       help="After conversion, re-check every (AA, cluster) pair against the rotamer library and report how many are valid.")
     parser.add_argument("--analyze_ss", action="store_true",
-                       help="Analyze Secondary Structure distribution")
+                       help="If the dataset contains an 'ss' (Secondary Structure) array, print its class distribution.")
     
     args = parser.parse_args()
     
-    # Carica rotamer library
+    # Load rotamer library
     print("="*60)
     print("LOADING ROTAMER LIBRARY")
     print("="*60)
     lib = load_rotamer_library(args.rotamer_csv)
     
-    # Carica dataset
+    # Load dataset
     print("\n" + "="*60)
     print("LOADING DATASET")
     print("="*60)
     print(f"Input file: {args.input}")
     
-    data = np.load(args.input, allow_pickle=True)  # 🆕 allow_pickle per pdb_id
+    data = np.load(args.input, allow_pickle=True)  # allow_pickle is needed for the pdb_id string array
     aa_ids = data["aa_ids"]
     cluster_global = data["cluster_idx"]
     
@@ -175,7 +207,7 @@ def main():
     print(f"AA range: {aa_ids.min()} - {aa_ids.max()}")
     print(f"Cluster range (global): {cluster_global.min()} - {cluster_global.max()}")
     
-    # Controlla se c'è SASA
+    # Check whether SASA is present
     if "sasa" in data:
         print(f"SASA found - range: {data['sasa'].min():.4f} - {data['sasa'].max():.4f}")
         print(f"SASA mean: {data['sasa'].mean():.4f}")
@@ -183,7 +215,7 @@ def main():
     elif "exposure" in data:
         print(f"Exposure found (binary) - using legacy format")
     
-    # Controlla se c'è SS
+    # Check whether SS is present
     has_ss = "ss" in data
     if has_ss:
         ss_ids = data["ss"]
@@ -193,28 +225,28 @@ def main():
         if args.analyze_ss:
             analyze_ss_distribution(ss_ids)
     else:
-        print("⚠️  No Secondary Structure (SS) data found in dataset")
+        print("[WARN] No Secondary Structure (SS) data found in dataset")
     
-    # Controlla se c'è pos_idx
+    # Check whether pos_idx is present
     if "pos_idx" in data:
         pos_idx = data["pos_idx"]
         print(f"Position indices found - range: {pos_idx.min()} - {pos_idx.max()}")
     
-    # 🆕 Controlla protein_class_id
+    # Check whether protein_class_id is present
     if "protein_class_id" in data:
         protein_class_ids = data["protein_class_id"]
         print(f"Protein Class IDs found - range: {protein_class_ids.min()} - {protein_class_ids.max()}")
         unique_classes = np.unique(protein_class_ids)
         print(f"  Unique protein classes: {len(unique_classes)}")
     
-    # 🆕 Controlla pdb_id
+    # Check whether pdb_id is present
     if "pdb_id" in data:
         pdb_ids = data["pdb_id"]
         print(f"PDB IDs found - total: {len(pdb_ids)}")
         unique_pdbs = len(set(pdb_ids))
         print(f"  Unique PDB IDs: {unique_pdbs}")
     
-    # Converti
+    # Convert
     print("\n" + "="*60)
     print("CONVERTING CLUSTERS")
     print("="*60)
@@ -229,7 +261,7 @@ def main():
     
     print(f"\nCluster range (local): {cluster_local.min()} - {cluster_local.max()}")
     
-    # Verifica
+    # Verify
     if args.verify:
         print("\n" + "="*60)
         print("VERIFYING CONVERSION")
@@ -243,18 +275,18 @@ def main():
             print(f"Invalid pairs: {invalid}/{total} ({invalid/total*100:.1f}%)")
             
             if invalid == 0:
-                print("\n✅ ALL PAIRS ARE NOW VALID!")
+                print("\nALL PAIRS ARE NOW VALID!")
             else:
-                print(f"\n⚠️  Still {invalid} invalid pairs. Check warnings above.")
+                print(f"\n[WARN] Still {invalid} invalid pairs. Check warnings above.")
         else:
             print("No non-masked pairs to validate.")
     
-    # Salva
+    # Save
     print("\n" + "="*60)
     print("SAVING CONVERTED DATASET")
     print("="*60)
     
-    # Copia tutti gli altri campi (incluso SASA e SS se presenti)
+    # Copy over all other fields (including SASA and SS, if present)
     output_data = {}
     for key in data.keys():
         if key == "cluster_idx":
@@ -270,7 +302,7 @@ def main():
     print(f"Saved to: {args.output}")
     print(f"File size: {output_path.stat().st_size / 1024:.1f} KB")
     
-    # Mostra campi salvati
+    # Show saved fields
     print(f"\nFields saved:")
     for key in output_data.keys():
         arr = output_data[key]
@@ -286,9 +318,9 @@ def main():
     print("Remember to convert both train and test datasets!")
     
     if has_ss:
-        print("\n✅ Secondary Structure (SS) data preserved in output")
+        print("\nSecondary Structure (SS) data preserved in output")
     else:
-        print("\n⚠️  No SS data in input - consider regenerating dataset with SS features")
+        print("\n[WARN] No SS data in input - consider regenerating dataset with SS features")
 
 
 if __name__ == "__main__":
