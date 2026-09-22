@@ -22,7 +22,7 @@ Usage:
         --csv windows_all.csv \
         --output proteins_metadata_with_class.json
     
-  python teacher_kfold_train_complete.py \
+  python teacher_kfold_train_full.py \
     --data windows_all_local.npz \
     --test_data test.npz \ (to be changed according to your own testset)
     --run_name full_model \
