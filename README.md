@@ -4,7 +4,6 @@
 
 <img align="left" hspace="15" width="297" alt="amylo_con_sigla" src="https://github.com/user-attachments/assets/9c06e29e-13f7-420d-9c79-9a74c73fca0f" />
 
-
 Amylo-spotter is a BiLSTM-based tool for identifying structural hotspots in amyloid fibril proteins. Given a 5-residue structural window (backbone position, rotamer, secondary structure, solvent exposure), the model learns to predict the central residue's identity and side-chain conformation, and the resulting per-position confidence is used to flag mutation-sensitive "hotspots" along a fibril structure.
 
 Manuscript in progress: *Palmiero et al.*
@@ -52,8 +51,8 @@ conda activate amylo_spotter_env
 The tokenized training data are included in the repository as `data/windows_all_local.npz`.
 
 The file contains the 5-residue structural windows extracted from all fibril structures
-in the dataset stored in a single
-archive. Each window can be traced back to its source structure, protein and class through the files in `metadata/`:
+in the dataset, stored in a single archive. Each window can be traced back to its source
+structure, protein and class through the files in `metadata/`:
 
 | File | Content |
 |------|---------|
@@ -95,9 +94,12 @@ python postprocessing/mutation_heatmap_extended_correction.py \
     --rotamer_csv common/rotamer_localmax_maxdens.csv \
     --fasta fasta/aS_7v49.fasta \
     --protein_name "α-synuclein" \
+    --window_seq VGGAV \
     --sequence_scan --start_residue 38 --end_residue 95 \
     --output results/asynuclein
 ```
+
+### Full-sequence landscape
 
 The main output is `results/asynuclein/aggregation_mutability_landscape.png`:
 
@@ -120,7 +122,36 @@ The figure has three panels:
   mutation-sensitive residues. If the density never drops that low, the 75th percentile
   is used instead.
 
+### Per-window analysis
 
+The script also analyzes the single 5-residue window given with `--window_seq` across all
+its occurrences in the dataset, i.e. across the different fibril polymorphs of the protein.
+In both figures each column is one polymorph (PDB ID on the x-axis) and each row is one of
+the 20 amino acids at the central position.
+
+<details>
+<summary><b>Show per-window figures</b></summary>
+
+<br>
+
+**Mutation probability** (`heatmap_prob.png`): predicted probability of each amino acid at
+the central position, with its rank among the 20 (#1 = most likely).
+
+<p align="center">
+<img width="10697" height="5929" alt="heatmap_prob" src="https://github.com/user-attachments/assets/d2a1f85e-085e-48a4-8998-7312212b8914" />
+
+</p>
+
+**ΔlogP landscape** (`heatmap_delta_logp.png`): the same predictions expressed relative to
+the wild type (highlighted row, ΔlogP = 0). Red cells are substitutions disfavored compared
+to the wild type, blue cells are favored ones.
+
+<p align="center">
+  <img width="10701" height="5930" alt="heatmap_delta_logp" src="https://github.com/user-attachments/assets/7708942e-89bb-4f37-8026-0aa4fd3ca3ec" />
+
+</p>
+
+</details>
 
 ## Pipeline overview
 
@@ -138,7 +169,8 @@ The project is organized around three stages:
 
 ## How to run
 
-Here it is shown the whole pipeline if you want train a new model.
+This section describes the full pipeline, which is only needed to build a new dataset or
+train a new model.
 
 ### 1. Data pipeline
 
@@ -182,7 +214,7 @@ Amylo-Spotter/
 │   └── rotamer_localmax_maxdens.csv
 │
 ├── data/
-│   └── windows_all_local.npz      # tokenized windows, pathological + functional fibrils
+│   └── windows_all_local.npz      # tokenized windows of all fibril structures
 │
 ├── fasta/                         # FASTA sequences of the proteins in the dataset
 │
