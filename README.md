@@ -120,7 +120,7 @@ The figure has three panels:
   mutation-sensitive residues. If the density never drops that low, the 75th percentile
   is used instead.
 
-The analysis only covers proteins whose structural windows are included in the dataset.
+
 
 ## Pipeline overview
 
@@ -138,8 +138,7 @@ The project is organized around three stages:
 
 ## How to run
 
-> **Note:** all scripts should be run from the repository root, since some of them add
-> `common/` and `model/` to `sys.path` at import time.
+Here it is shown the whole pipeline if you want train a new model.
 
 ### 1. Data pipeline
 
@@ -220,7 +219,7 @@ Amylo-Spotter/
 
 ## How to cite
 
-If you use Amylo-spotter, please cite:
+If you use Amylo-Spotter, please cite:
 
 > Palmiero et al. *Manuscript in preparation.*
 
