@@ -107,34 +107,6 @@ logic was changed. Affected files:
 
 All files were checked with `python -m py_compile` after the change.
 
-## Training
-
-```bash
-python model/training/teacher_kfold_train_complete.py \
-    --data windows_all_local.npz \
-    --protein_metadata metadata/proteins_metadata_with_class.json \
-    --rotamer_csv common/rotamer_localmax_maxdens.csv \
-    --leave_out_protein_class "α-synuclein" \
-    --outdir teachers1/ \
-    --validation_mode all \
-    --k_folds 5 \
-    --epochs 200 \
-    --batch_size 32 \
-    --lr 1e-3 \
-    --weight_decay 1e-3 \
-    --grad_clip 1.0 \
-    --d_embed 256 \
-    --d_hidden 512 \
-    --lstm_layers 3 \
-    --dropout 0.25 \
-    --lambda_cl 1.0 \
-    --patience 35 \
-    --embed_dropout 0.3 \
-    --label_smoothing 0.08 \
-    --use_mixup \
-    --mixup_alpha 0.2 \
-    --sasa_threshold 0.123
-```
 
 ## TODO
 
