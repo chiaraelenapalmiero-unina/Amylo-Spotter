@@ -2,7 +2,9 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
 
-<img align="left" hspace="15" width="297" alt="amylospotter" src="https://github.com/user-attachments/assets/02db36b0-b693-4029-917d-ce5665b11b20" />
+<img align="left" hspace="15" width="297" alt="amylo_con_sigla" src="https://github.com/user-attachments/assets/9c06e29e-13f7-420d-9c79-9a74c73fca0f" />
+
+
 
 Amylo-spotter is a BiLSTM-based tool for identifying structural hotspots in amyloid fibril proteins. Given a 5-residue structural window (backbone position, rotamer, secondary structure, solvent exposure), the model learns to predict the central residue's identity and side-chain conformation, and the resulting per-position confidence is used to flag mutation-sensitive "hotspots" along a fibril structure.
 
