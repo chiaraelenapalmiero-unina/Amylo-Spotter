@@ -51,10 +51,9 @@ conda activate amylo_spotter_env
 
 The tokenized training data are included in the repository as `data/windows_all_local.npz`.
 
-The file contains the 5-residue structural windows extracted from **all fibril structures
-in the dataset, both pathological and functional amyloids**, stored together in a single
-archive. Each window can be traced back to its source structure, protein and class
-(pathological/functional) through the files in `metadata/`:
+The file contains the 5-residue structural windows extracted from all fibril structures
+in the dataset stored in a single
+archive. Each window can be traced back to its source structure, protein and class through the files in `metadata/`:
 
 | File | Content |
 |------|---------|
