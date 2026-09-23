@@ -1,14 +1,19 @@
-# Amylo-spotter
 
-Amylo-spotter is a BiLSTM-based tool for identifying structural hotspots in
-amyloid fibril proteins. Given a 5-residue structural window (backbone
-position, rotamer, secondary structure, solvent exposure), the model learns
-to predict the central residue's identity and side-chain conformation,
-and the resulting per-position confidence is used to flag mutation-sensitive
-"hotspots" along a fibril structure.
+# Amylo-spotter
+<img align="left"  hspace="15"  width="297" height="165" alt="amylospotter" src="https://github.com/user-attachments/assets/02db36b0-b693-4029-917d-ce5665b11b20" />
+
+
+
+
+
+Amylo-spotter is a BiLSTM-based tool for identifying structural hotspots in amyloid fibril proteins. Given a 5-residue structural window (backbone position, rotamer, secondary structure, solvent exposure), the model learns to predict the central residue's identity and side-chain conformation, and the resulting per-position confidence is used to flag mutation-sensitive "hotspots" along a fibril structure.
 
 Manuscript in progress: *Palmiero et al.*
+
+<br clear="left"/>
+
 ### **Website version available at this link: ...**
+
 
 ## Pipeline overview
 
@@ -18,11 +23,11 @@ The project is organized around three stages:
    structure and solvent accessibility, classify residues as buried/exposed,
    assign each residue to a rotamer cluster, and slide a 5-residue window
    along each β-strand to build the tokenized training arrays.
-2. **Model** — a BiLSTM (`ProteinMLM_v2`) trained as a masked-residue
-   predictor (amino acid identity + rotamer cluster), with k-fold
+2. **Model** — a BiLSTM trained as a masked-residue predictor
+   (amino acid identity + rotamer cluster), with k-fold
    cross-validation and a leave-one-protein-class-out scheme to avoid
    data leakage across structures of the same protein.
-3. **Post-processing** — use a trained model to score point mutations
+4. **Post-processing** — use a trained model to score point mutations
    across a window/sequence and produce mutational landscapes, entropy
    profiles, and hotspot heatmaps.
 
@@ -69,11 +74,7 @@ amylo-spotter/
 │   └── pdb_to_protein_class.csv
 │
 ├── postprocessing/
-│   └── mutation_heatmap_extended_correction.py   # mutation scoring, entropy/hotspot analysis
-│
-└── results/
-    ├── figures/
-    └── tables/
+    └── mutation_heatmap_extended_correction.py   # mutation scoring, entropy/hotspot analysis
 ```
 
 ## Environments
@@ -87,25 +88,6 @@ conda env create -f envs/amylo_spotter_env.yml
 (`data_pipeline/AUTOMATED_DSSP.py`, `data_pipeline/dssp.py`).
 Everything else — window construction, training, post-processing — runs
 under `amylo_spotter_env` (Python 3.13, CUDA 12.4, PyTorch 2.5.1).
-
-## A note on imports
-
-A few scripts originally assumed every file lived in one flat folder
-(e.g. `from rotamer_library import ...`, `from topk_model2 import ...`).
-Splitting the project into `common/` / `data_pipeline/` / `model/` /
-`postprocessing/` would have broken those imports, so a small
-`sys.path.append(...)` was added at the top of each affected file — no
-logic was changed. Affected files:
-
-- `data_pipeline/convert_global_to_local_clusters.py` → resolves `common/`
-- `data_pipeline/window_array_from_json_to_csv.py` → rotamer CSV path now
-  points to `common/rotamer_localmax_maxdens.csv`
-- `model/training/teacher_kfold_train_complete.py` → resolves `model/` and `common/`
-- `model/training/train_globular_vs_fibrils.py` → resolves `model/` and `common/`
-- `postprocessing/mutation_heatmap_extended_correction.py` → resolves `model/`
-  (needed for `ProteinMLM_v2` inside `load_model()`)
-
-All files were checked with `python -m py_compile` after the change.
 
 
 ## TODO
