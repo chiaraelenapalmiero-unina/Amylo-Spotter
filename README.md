@@ -171,10 +171,10 @@ Amylo-Spotter/
 │   └── pdb_to_protein_class.csv
 │
 ├── postprocessing/
-│   └── mutation_heatmap_extended_correction.py  # mutation scoring, entropy/hotspot analysis
+│   └── mutation_heatmap_extended_correction.py  # mutation scoring, hotspot analysis
 │
-├── trained_models/                # (not tracked) download from Zenodo, see above
-├── data/                          # (not tracked) download from Zenodo, see above
+├── trained_models/                # download from Zenodo, see above
+├── data/                          # download from Zenodo, see above
 │
 ├── .gitignore
 └── README.md
