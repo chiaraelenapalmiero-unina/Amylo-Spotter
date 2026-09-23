@@ -5,7 +5,6 @@
 <img align="left" hspace="15" width="297" alt="amylo_con_sigla" src="https://github.com/user-attachments/assets/9c06e29e-13f7-420d-9c79-9a74c73fca0f" />
 
 
-
 Amylo-spotter is a BiLSTM-based tool for identifying structural hotspots in amyloid fibril proteins. Given a 5-residue structural window (backbone position, rotamer, secondary structure, solvent exposure), the model learns to predict the central residue's identity and side-chain conformation, and the resulting per-position confidence is used to flag mutation-sensitive "hotspots" along a fibril structure.
 
 Manuscript in progress: *Palmiero et al.*
@@ -53,8 +52,9 @@ conda activate amylo_spotter_env
 The tokenized training data are included in the repository as `data/windows_all_local.npz`.
 
 The file contains the 5-residue structural windows extracted from **all fibril structures
-in the dataset. Each window can be traced back to its source structure, protein and class
-through the files in `metadata/`:
+in the dataset, both pathological and functional amyloids**, stored together in a single
+archive. Each window can be traced back to its source structure, protein and class
+(pathological/functional) through the files in `metadata/`:
 
 | File | Content |
 |------|---------|
@@ -72,7 +72,7 @@ Trained models are too large for GitHub and are available on Zenodo:
 | File | Content |
 |------|---------|
 | `trained_models_generic.zip` | model trained across all protein classes |
-| `trained_models_per_protein.zip` | one model per individual protein |
+| `trained_models_per_protein.zip` | one model per individual protein (`teacher_<protein>/best_teacher.pt`) |
 
 Download the archives and extract them into the repository root:
 
@@ -90,11 +90,11 @@ repository root:
 ```bash
 conda activate amylo_spotter_env
 python postprocessing/mutation_heatmap_extended_correction.py \
-    --model trained_models/teacher_α-synuclein"/best_teacher.pt \
+    --model "trained_models/teacher_α-synuclein/best_teacher.pt" \
     --data data/windows_all_local.npz \
     --protein_metadata metadata/proteins_metadata_with_class.json \
     --rotamer_csv common/rotamer_localmax_maxdens.csv \
-    --fasta examples/aS_7v49.fasta \
+    --fasta fasta/aS_7v49.fasta \
     --protein_name "α-synuclein" \
     --sequence_scan --start_residue 38 --end_residue 95 \
     --output results/asynuclein
@@ -208,7 +208,6 @@ Amylo-Spotter/
 │
 ├── metadata/                      # maps each structure to its protein and class
 │   ├── proteins_metadata_with_class.json
-│   ├── proteins_metadata_pathological.json
 │   └── pdb_to_protein_class.csv
 │
 ├── postprocessing/
