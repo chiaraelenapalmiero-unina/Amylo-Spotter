@@ -229,8 +229,3 @@ Trained models: Zenodo, DOI [10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zen
 
 For any questions/comments (**_regarding this code_**) please contact:
 chiaraelena.palmiero@unina.it
-
-## TODO
-
-- [ ] Upload trained models to Zenodo and update the DOI
-- [ ] Add a `LICENSE`
