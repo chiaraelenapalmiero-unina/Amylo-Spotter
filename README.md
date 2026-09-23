@@ -186,6 +186,8 @@ Amylo-Spotter/
 ├── data/
 │   └── windows_all_local.npz      # tokenized windows, pathological + functional fibrils
 │
+├── fasta/                         # FASTA sequences of the proteins in the dataset
+│
 ├── data_pipeline/                 # PDB structures -> tokenized training windows
 │   ├── dssp.py                    # minimal DSSP usage example
 │   ├── AUTOMATED_DSSP.py          # batch DSSP + ACC normalization over a folder of PDBs
