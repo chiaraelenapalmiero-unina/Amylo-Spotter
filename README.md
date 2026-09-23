@@ -88,7 +88,7 @@ repository root:
 ```bash
 conda activate amylo_spotter_env
 python postprocessing/mutation_heatmap_extended_correction.py \
-    --model trained_models/per_protein/<aS_model>.pt \
+    --model trained_models/teacher_α-synuclein"/best_teacher.pt \
     --data data/windows_all_local.npz \
     --protein_metadata metadata/proteins_metadata_with_class.json \
     --rotamer_csv common/rotamer_localmax_maxdens.csv \
