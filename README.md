@@ -46,31 +46,45 @@ and activate the one you need with:
 conda activate amylo_spotter_env
 ```
 
-## Data and trained models
+## Data
 
-Trained models and preprocessed training data are too large for GitHub and are
-available on Zenodo: [10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX)
+The tokenized training data are included in the repository as `data/windows_all_local.npz`.
 
-The record contains:
+The file contains the 5-residue structural windows extracted from **all fibril structures
+in the dataset, both pathological and functional amyloids**, stored together in a single
+archive. Each window can be traced back to its source structure, protein and class
+(pathological/functional) through the files in `metadata/`:
+
+| File | Content |
+|------|---------|
+| `proteins_metadata_with_class.json` | metadata for every structure in the dataset, including its protein class |
+| `proteins_metadata_pathological.json` | metadata restricted to the pathological fibrils |
+| `pdb_to_protein_class.csv` | mapping from PDB ID to protein and class |
+
+The post-processing scripts use these files to select the windows of a given protein
+(`--protein_name` together with `--protein_metadata`).
+
+## Trained models
+
+Trained models are too large for GitHub and are available on Zenodo:
+[10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX)
 
 | File | Content |
 |------|---------|
 | `trained_models_generic.zip` | model trained across all protein classes |
 | `trained_models_per_protein.zip` | one model per individual protein |
-| `training_data_npz.zip` | tokenized 5-residue windows (`.npz`) |
 
 Download the archives and extract them into the repository root:
 
 ```bash
 unzip trained_models_generic.zip -d trained_models/
 unzip trained_models_per_protein.zip -d trained_models/
-unzip training_data_npz.zip -d data/
 ```
 
 ## Quick start
 
 Compute the aggregation mutability landscape of α-synuclein with its protein-specific
-model (after downloading models and data from Zenodo, see above). Run from the
+model (after downloading the trained models from Zenodo, see above). Run from the
 repository root:
 
 ```bash
@@ -89,8 +103,7 @@ python postprocessing/mutation_heatmap_extended_correction.py \
 The main output is `results/asynuclein/aggregation_mutability_landscape.png`:
 
 <p align="center">
-  <img width="13004" height="6919" alt="aggregation_mutability_landscape" src="https://github.com/user-attachments/assets/dc08f8d0-bcf7-4efd-88b8-b1427e7533a0" />
-
+  <img width="100%" alt="aggregation_mutability_landscape" src="https://github.com/user-attachments/assets/dc08f8d0-bcf7-4efd-88b8-b1427e7533a0" />
 </p>
 
 The figure has three panels:
@@ -170,6 +183,9 @@ Amylo-Spotter/
 │   ├── rotamer_library.py         # AA <-> rotamer cluster mappings
 │   └── rotamer_localmax_maxdens.csv
 │
+├── data/
+│   └── windows_all_local.npz      # tokenized windows, pathological + functional fibrils
+│
 ├── data_pipeline/                 # PDB structures -> tokenized training windows
 │   ├── dssp.py                    # minimal DSSP usage example
 │   ├── AUTOMATED_DSSP.py          # batch DSSP + ACC normalization over a folder of PDBs
@@ -188,7 +204,7 @@ Amylo-Spotter/
 │   ├── training/                  # k-fold training (leave-one-protein-class-out)
 │   └── Training_full/             # full training runs
 │
-├── metadata/
+├── metadata/                      # maps each structure to its protein and class
 │   ├── proteins_metadata_with_class.json
 │   ├── proteins_metadata_pathological.json
 │   └── pdb_to_protein_class.csv
@@ -196,8 +212,7 @@ Amylo-Spotter/
 ├── postprocessing/
 │   └── mutation_heatmap_extended_correction.py  # mutation scoring, hotspot analysis
 │
-├── trained_models/                # download from Zenodo, see above
-├── data/                          # download from Zenodo, see above
+├── trained_models/                # (not tracked) download from Zenodo, see above
 │
 ├── .gitignore
 └── README.md
@@ -209,7 +224,7 @@ If you use Amylo-spotter, please cite:
 
 > Palmiero et al. *Manuscript in preparation.*
 
-Trained models and data: Zenodo, DOI [10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX)
+Trained models: Zenodo, DOI [10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX)
 
 ## Contact
 
@@ -218,5 +233,5 @@ chiaraelena.palmiero@unina.it
 
 ## TODO
 
-- [ ] Upload trained models and `.npz` data to Zenodo and update the DOI
+- [ ] Upload trained models to Zenodo and update the DOI
 - [ ] Add a `LICENSE`
