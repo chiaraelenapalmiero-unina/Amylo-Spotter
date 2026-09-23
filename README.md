@@ -69,23 +69,46 @@ unzip training_data_npz.zip -d data/
 
 ## Quick start
 
-Predict hotspots on a single fibril structure using the generic model
-(after downloading it from Zenodo, see above):
+Compute the aggregation mutability landscape of α-synuclein with its protein-specific
+model (after downloading models and data from Zenodo, see above). Run from the
+repository root:
 
 ```bash
 conda activate amylo_spotter_env
 python postprocessing/mutation_heatmap_extended_correction.py \
-    --pdb examples/example_fibril.pdb \
-    --model trained_models/generic/<model_file>.pt \
-    --out results/
+    --model trained_models/per_protein/<aS_model>.pt \
+    --data data/windows_all_local.npz \
+    --protein_metadata metadata/proteins_metadata_with_class.json \
+    --rotamer_csv common/rotamer_localmax_maxdens.csv \
+    --fasta examples/aS_7v49.fasta \
+    --protein_name "α-synuclein" \
+    --sequence_scan --start_residue 38 --end_residue 95 \
+    --output results/asynuclein
 ```
 
-This produces a per-residue mutational landscape and a hotspot heatmap
-in `results/`:
+The main output is `results/asynuclein/aggregation_mutability_landscape.png`:
 
 <p align="center">
-  <img src="docs/images/example_heatmap.png" alt="Example hotspot heatmap" width="700">
+  <img width="13004" height="6919" alt="aggregation_mutability_landscape" src="https://github.com/user-attachments/assets/dc08f8d0-bcf7-4efd-88b8-b1427e7533a0" />
+
 </p>
+
+The figure has three panels:
+
+- **Top — mutability landscape:** ΔlogP = log p(mut) − log p(WT) for every possible
+  substitution (rows) at each sequence position (columns); black dots mark the wild-type
+  residue. Red cells are substitutions the model disfavors relative to the wild type,
+  blue cells are favored ones.
+- **Middle — hotspot index:** mean |ΔlogP| per position. Positions above the threshold
+  (dashed line) are flagged as mutation-sensitive hotspots.
+- **Bottom — hotspot index distribution:** the threshold is set automatically from this
+  distribution. The histogram of hotspot index values is smoothed with a Gaussian filter,
+  and the threshold is the first point after the dominant peak where the density drops
+  below 5% of the peak height. Positions to its right form the tail of rigid,
+  mutation-sensitive residues. If the density never drops that low, the 75th percentile
+  is used instead.
+
+The analysis only covers proteins whose structural windows are included in the dataset.
 
 ## Pipeline overview
 
