@@ -219,6 +219,4 @@ chiaraelena.palmiero@unina.it
 ## TODO
 
 - [ ] Upload trained models and `.npz` data to Zenodo and update the DOI
-- [ ] Add a quick-start example (single PDB -> hotspot heatmap)
-- [ ] Add an example output figure
 - [ ] Add a `LICENSE`
