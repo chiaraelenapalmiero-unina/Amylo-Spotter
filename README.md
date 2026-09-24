@@ -167,7 +167,7 @@ The project is organized around three stages:
 3. **Post-processing** — use a trained model to score point mutations across a
    window/sequence and produce mutational landscapes, entropy profiles, and hotspot heatmaps.
 
-## How to run
+## OPTIONAL: Training a new model
 
 This section describes the full pipeline, which is only needed to build a new dataset or
 train a new model.
