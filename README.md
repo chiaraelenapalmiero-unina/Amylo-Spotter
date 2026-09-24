@@ -122,7 +122,7 @@ The figure has three panels:
   mutation-sensitive residues. If the density never drops that low, the 75th percentile
   is used instead.
 
-### Per-window analysis
+### Per-window analysis (click on to see)
 
 The script also analyzes the single 5-residue window given with `--window_seq` across all
 its occurrences in the dataset, i.e. across the different fibril polymorphs of the protein.
