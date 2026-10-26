@@ -167,39 +167,6 @@ The project is organized around three stages:
 3. **Post-processing** — use a trained model to score point mutations across a
    window/sequence and produce mutational landscapes, entropy profiles, and hotspot heatmaps.
 
-## OPTIONAL: Training a new model
-
-This section describes the full pipeline, which is only needed to build a new dataset or
-train a new model.
-
-### 1. Data pipeline
-
-Within `dssp_env`:
-
-```bash
-python data_pipeline/AUTOMATED_DSSP.py ...
-```
-
-Within `amylo_spotter_env`:
-
-```bash
-python data_pipeline/classification_exposition.py ...
-python data_pipeline/window_array_from_json_to_csv.py ...
-python data_pipeline/build_windows5_tokens.py ...
-python data_pipeline/convert_global_to_local_clusters.py ...
-```
-
-### 2. Training
-
-```bash
-python model/training/teacher_kfold_train_complete.py ...
-```
-
-### 3. Post-processing
-
-```bash
-python postprocessing/mutation_heatmap_extended_correction.py ...
-```
 
 ## Repository structure
 
